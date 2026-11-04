@@ -1,0 +1,18 @@
+{
+  "name": "village",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.mjs && node test-world.mjs && node test-casino.mjs && node test-blackjack.mjs && node test-holdem.mjs && node test-visual.mjs && node test-daycycle.mjs && node test-sacred.mjs && node test-fishing.mjs && node test-rituals.mjs && node test-minimap.mjs && node test-camp.mjs && node test-bots.mjs && node test-stick.mjs && node test-park.mjs && node test-rides.mjs && node test-zoo.mjs && node test-pathfind.mjs",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "three": "^0.187.0",
+    "ws": "^8.22.1"
+  }
+}

@@ -1,0 +1,13 @@
+# Render(https://render.com)에 게임 서버를 올릴 때: 저장소를 연결하면 이 설정을 읽음.
+services:
+  - type: web
+    name: pogeun-village
+    runtime: docker
+    plan: free
+    envVars:
+      - key: ALLOW_ORIGIN      # 화면을 Vercel 에 올렸다면 그 주소 (예: https://village.vercel.app). 같은 서버에서 화면도 주면 비워 둠
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL    # 계정 저장소(꼭 필요: 무료 서버는 디스크가 사라짐)
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

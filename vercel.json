@@ -1,0 +1,5 @@
+{
+  "buildCommand": "node tools/build-static.mjs",
+  "outputDirectory": "dist",
+  "installCommand": "npm ci --omit=dev"
+}

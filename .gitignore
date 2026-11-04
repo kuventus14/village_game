@@ -1,0 +1,9 @@
+node_modules
+data
+dist
+.env
+
+# 화면 확인용 스크린샷(약 400MB) · 맥 잡파일 · 로그
+docs/visual/
+.DS_Store
+*.log
