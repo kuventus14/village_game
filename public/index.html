@@ -37,6 +37,10 @@ input{font:inherit;color:inherit;-webkit-user-select:text;user-select:text}
 button.big{width:100%;margin-top:14px;padding:13px;border-radius:18px;background:var(--coral);color:#fff;font-size:21px;box-shadow:0 4px 0 #e0566a}
 button.big:active{transform:translateY(3px);box-shadow:0 1px 0 #e0566a}
 button.big:disabled{opacity:.6}
+button.alt{width:100%;margin-top:10px;padding:10px;border-radius:16px;background:#fff;border:2px solid #f0d9c4;font-size:17px;color:var(--ink)}
+button.alt small{font-size:13px;opacity:.65;margin-left:4px}
+#gf .gh{margin:2px 0 12px;text-align:center;font-size:15px;line-height:1.5;color:var(--ink);opacity:.85}
+#gg button{padding:16px 0;font-size:22px}
 #join form{max-height:calc(var(--vvh,100dvh) - 20px);overflow:auto;overscroll-behavior:contain} /* --vvh = 주소창·키보드를 뺀 실제로 보이는 높이 (game.js) */
 #jf .btnrow{position:sticky;bottom:0;background:linear-gradient(transparent,var(--cream) 40%)} /* 짧은 화면에서도 '저장하고 입장' 이 늘 닿게 */
 #menuBtn,#phm{display:none}
@@ -247,6 +251,13 @@ button.big:disabled{opacity:.6}
     <div class="row"><label>비번</label><input class="in" id="pw" type="password" maxlength="64" autocomplete="current-password" placeholder="6자 이상" enterkeyhint="go"></div>
     <div id="aerr" role="alert"></div>
     <button id="ago" class="big">로그인</button>
+    <button type="button" id="guestgo" class="alt">바로 입장하기 <small>기록 저장 없이</small></button>
+  </form>
+  <form id="gf" hidden>
+    <h1>👋 바로 입장하기</h1>
+    <p class="gh">기록은 저장되지 않아요. 성별만 고르면 아바타와 닉네임은 랜덤으로 정해져요.</p>
+    <div class="seg" id="gg"><button type="button" data-g="m">🙋‍♂️ 남자</button><button type="button" data-g="f">🙋‍♀️ 여자</button></div>
+    <button type="button" id="guestback" class="alt">← 로그인으로 돌아가기</button>
   </form>
   <form id="jf" hidden>
     <h1>🎨 아바타 꾸미기</h1>

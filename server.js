@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { STATUS, AUTO, SEATS, SIT_STATUS, PORTALS, transitMs, placeOf, resolve, spawnPoint, standPos } from './public/world.js';
+import { STATUS, AUTO, SEATS, SIT_STATUS, PORTALS, transitMs, placeOf, resolve, spawnPoint, standPos, cleanAvatar, randomAvatar } from './public/world.js';
+import { guestNick, isGuestNick } from './guest.js';
 import { createStore } from './store.js';
 import { createAuth } from './auth.js';
 import { createGames } from './games.js';
@@ -130,16 +131,30 @@ wss.on('connection', (ws) => {
   ws.on('pong', () => (ws.alive = true));
   const rate = setInterval(() => (msgs = 0), 1000);
 
-  async function join(token) {
-    const m = await auth.me(token);
+  const newMe = (nick, uid, a, chips, dex, rec) => { const [x, z] = resolve(...spawnPoint()); return { ws, nick, uid, a, chips, s: 'free', auto: false, seat: -1, fl: 0, transit: null, pl: 'town', x, z, ry: Math.PI, y: 0, pad: null, game: null, dex, fish: null, rec, act: null, vl: false }; };
+  // 바로 입장(손님): 계정·기록 없이 들어옴. uid 가 없어서 칩·낚시·기도 기록은 저장되지 않음(봇과 같은 규칙). 닉네임은 서버가 랜덤으로 정하고 겹치면 다시 뽑음, 아바타는 성별에 맞게 클라이언트가 뽑은 것을 정리해서 씀
+  async function joinGuest(gs) {
+    if (players.size >= MAX_PLAYERS) return send(ws, { t: 'full' });
+    const a = cleanAvatar(gs?.a?.g ? gs.a : randomAvatar(gs?.g === 'f' ? 'f' : 'm'));
+    const online = (n) => [...players.values()].some((p) => p.nick.toLowerCase() === n.toLowerCase());
+    const used = async (n) => bots.reserved(n) || online(n) || (await auth.nickTaken(n));
+    let nick = isGuestNick(gs?.nick) && !(await used(gs.nick)) ? gs.nick : null; // 끊겼다 다시 들어올 땐 같은 이름
+    for (let i = 0; !nick && i < 60; i++) { const n = guestNick(Math.random, i < 40 ? 2 : 3); if (!(await used(n))) nick = n; }
+    if (!nick || online(nick)) return send(ws, { t: 'auth' }); // 동시에 같은 이름이 나온 드문 경우만 (다시 누르면 됨)
+    me = newMe(nick, null, a, 1000, {}, {});
+    addPlayer(me, { chips: 1000, refilled: false });
+    bots.onHuman(me);
+  }
+  async function join(msg) {
+    if (msg.guest) return joinGuest(msg.guest);
+    const m = await auth.me(msg.token);
     if (!m?.user.avatar) return send(ws, { t: 'auth' }); // 로그인 안 됐거나 아바타를 아직 안 만듦
     if (players.size >= MAX_PLAYERS) return send(ws, { t: 'full' });
     const old = byUid(m.id);
     if (old) { send(old.ws, { t: 'kicked' }); old.ws.close(); } // 같은 계정이 다른 곳에서 접속하면 이전 접속을 끊음
-    const [x, z] = resolve(...spawnPoint());
     let chips = m.user.chips ?? 1000, refilled = false;
     if (chips < 300 && Date.now() - (m.user.refillAt || 0) > 6 * 3600e3) { chips = 1000; refilled = true; auth.saveChips(m.id, chips, Date.now()).catch(console.error); } // 파산 구제: 6시간에 한 번
-    me = { ws, nick: m.nick, uid: m.id, a: m.user.avatar, chips, s: 'free', auto: false, seat: -1, fl: 0, transit: null, pl: 'town', x, z, ry: Math.PI, y: 0, pad: null, game: null, dex: m.user.fish ?? {}, fish: null, rec: m.user.sacred ?? {}, act: null, vl: false };
+    me = newMe(m.nick, m.id, m.user.avatar, chips, m.user.fish ?? {}, m.user.sacred ?? {});
     addPlayer(me, { chips, refilled });
     bots.onHuman(me);
   }
@@ -148,7 +163,7 @@ wss.on('connection', (ws) => {
     if (++msgs > 40) return; // 초당 40건 넘으면 무시
     let m; try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m !== 'object') return;
-    if (m.t === 'join') { if (!me && !joining) { joining = true; join(m.token).catch((e) => console.error(e)).finally(() => (joining = false)); } return; }
+    if (m.t === 'join') { if (!me && !joining) { joining = true; join(m).catch((e) => console.error(e)).finally(() => (joining = false)); } return; }
     if (me) onMsg(me, m);
   });
   ws.on('close', () => { clearInterval(rate); if (me) drop(me); });

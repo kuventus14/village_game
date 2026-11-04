@@ -247,7 +247,7 @@ let ws, lastSent = '', sendT = 0, kicked = false;
 const send = (o) => ws?.readyState === 1 && ws.send(JSON.stringify(o));
 function connect() {
   ws = new WebSocket(wsUrl());
-  ws.onopen = () => send({ t: 'join', token: account.token });
+  ws.onopen = () => send(account.guest ? { t: 'join', guest: { g: account.g, a: account.avatar, nick: account.nick } } : { t: 'join', token: account.token }); // 손님은 다시 연결돼도 같은 아바타·이름
   ws.onmessage = (e) => handle(JSON.parse(e.data));
   ws.onclose = () => { if (phase === 'play' && !kicked) { toast('연결이 끊겼어요. 다시 연결 중…'); for (const id of [...players.keys()]) removePlayer(id); me = null; setTimeout(connect, 1500); } };
 }
@@ -260,6 +260,7 @@ function handle(m) {
   if (m.t === 'welcome') {
     for (const i of m.players) addPlayer(i);
     me = players.get(m.id);
+    if (account?.guest) { account.nick = me.name; account.avatar = me.a; } // 서버가 정한 손님 이름
     me.chips = m.chips; if (m.refilled) toast('🪙 칩이 바닥나서 1,000칩을 다시 받았어요!');
     if (phase !== 'play') { yaw = 0; camT.set(me.x, 1.2, me.z); }
     phase = 'play';
@@ -357,7 +358,7 @@ function setMode(m) {
   $('#aerr').textContent = '';
 }
 document.querySelectorAll('#am button').forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
-const showForm = (which) => { $('#af').hidden = which !== 'auth'; $('#jf').hidden = which !== 'edit'; $('#join').hidden = false; $('#hud').hidden = true; phase = 'join'; };
+const showForm = (which) => { $('#af').hidden = which !== 'auth'; $('#jf').hidden = which !== 'edit'; $('#gf').hidden = which !== 'guest'; $('#join').hidden = false; $('#hud').hidden = true; phase = 'join'; };
 function showAuth(msg = '') {
   account = null; showForm('auth'); setMode('login'); $('#aerr').textContent = msg;
   setPreview(randomAvatar(Math.random() < 0.5 ? 'm' : 'f'));
@@ -382,6 +383,14 @@ $('#af').onsubmit = async (e) => {
   account = { token: r.token, nick: r.nick, avatar: r.avatar };
   store.set('village.token', r.token); $('#pw').value = '';
   afterLogin();
+};
+// 바로 입장(손님): 계정·기록 없이. 성별만 고르면 아바타는 성별에 맞게 랜덤, 닉네임은 서버가 랜덤으로 정함 (welcome 에서 받음)
+$('#guestgo').onclick = () => { showForm('guest'); setPreview(randomAvatar(Math.random() < 0.5 ? 'm' : 'f')); };
+$('#guestback').onclick = () => showAuth();
+$('#gg').onclick = (e) => {
+  const g = e.target.closest('button')?.dataset.g; if (!g) return;
+  account = { guest: true, g, nick: null, avatar: randomAvatar(g) };
+  setPreview(account.avatar); enter();
 };
 $('#rnd').onclick = () => editor.random();
 $('#jf').onsubmit = async (e) => {
@@ -442,8 +451,8 @@ $('#setMenu').onclick = async (e) => {
   if (b.dataset.t) { store.set(TIME_KEY, b.dataset.t); atmo.clock = makeClock({ mode: b.dataset.t }); setTimeout(tick, 50); return markTime(); }
   if (b.dataset.q) { store.set(Q_KEY, b.dataset.q); const u = new URL(location.href); u.searchParams.delete('q'); location.replace(u); return; } // 품질은 다시 불러와야 적용됨
   if (b.dataset.a === 'help') { $('#setMenu').hidden = true; $('#help').hidden = false; return; }
-  if (b.dataset.a === 'edit') { sessionStorage.setItem('village.edit', '1'); location.reload(); }
-  else { await api('logout', { token: account.token }); store.del('village.token'); location.reload(); }
+  if (b.dataset.a === 'edit') { if (account?.guest) return toast('바로 입장 중에는 아바타를 바꿀 수 없어요. 회원가입하면 꾸밀 수 있어요'); sessionStorage.setItem('village.edit', '1'); location.reload(); }
+  else { if (!account?.guest) { await api('logout', { token: account.token }); store.del('village.token'); } location.reload(); }
 };
 setView(viewId, false);
 markTime();
