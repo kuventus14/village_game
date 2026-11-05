@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>게임 접속 현황</title>
+  <style>
+    :root { color-scheme: dark; --bg:#12131a; --panel:#1c1e29; --line:#333544; --text:#f7f4ff; --muted:#b8b6c8; --mint:#a6f0cf; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 system-ui,sans-serif; }
+    main { max-width:850px; margin:auto; padding:clamp(26px,7vw,70px) 20px; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:30px; }
+    h1,h2,p { margin:0; }
+    h1 { font-size:clamp(30px,6vw,46px); line-height:1.15; letter-spacing:-.06em; }
+    h2 { font-size:19px; }
+    .eyebrow { color:var(--mint); font-size:12px; font-weight:700; letter-spacing:.16em; margin-bottom:10px; }
+    .sub { color:var(--muted); margin-top:10px; }
+    button { border:1px solid var(--line); border-radius:10px; padding:9px 14px; background:var(--panel); color:var(--text); font:inherit; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:wait; }
+    .games { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr)); gap:14px; }
+    article { border:1px solid var(--line); background:var(--panel); border-radius:18px; padding:23px; }
+    .top { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 12px; }
+    .state { font-size:13px; color:var(--muted); }
+    .state[data-ok="true"] { color:var(--mint); }
+    .number { margin-top:20px; font-size:54px; line-height:1.2; font-weight:700; font-variant-numeric:tabular-nums; }
+    .unit { font-size:18px; color:var(--muted); font-weight:400; margin-left:6px; }
+    .detail { color:var(--muted); margin-top:12px; min-height:26px; }
+    .meta { margin-top:18px; color:var(--muted); font-size:13px; }
+    a { color:var(--mint); text-underline-offset:3px; }
+    footer { margin-top:18px; color:var(--muted); font-size:13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">GAME STATUS</p>
+        <h1>게임 접속 현황</h1>
+        <p class="sub">봇을 제외한 접속 수 · 10초마다 갱신</p>
+      </div>
+      <button type="button" id="refresh">새로고침</button>
+    </header>
+    <section class="games" aria-label="게임별 접속 현황">
+      <article id="village">
+        <div class="top"><h2>포근마을</h2><span class="state" role="status">확인 중</span></div>
+        <p class="number"><span class="count">—</span><span class="unit">명</span></p>
+        <p class="detail">마을에 입장한 플레이어</p>
+        <p class="meta"><span class="time">갱신 대기 중</span> · <a href="/">게임 열기</a></p>
+      </article>
+      <article id="holdem">
+        <div class="top"><h2>AFTER HOURS 홀덤</h2><span class="state" role="status">확인 중</span></div>
+        <p class="number"><span class="count">—</span><span class="unit">명</span></p>
+        <p class="detail">로비 —명 · 방 안 —명</p>
+        <p class="meta"><span class="time">갱신 대기 중</span> · <a href="https://after-hours-holdem.onrender.com/">게임 열기</a></p>
+      </article>
+    </section>
+    <footer>같은 사람이 여러 기기나 탭에서 접속하면 각각 집계될 수 있어요.</footer>
+  </main>
+  <script src="/config.js"></script>
+  <script type="module">
+    const villageServer = window.VILLAGE?.server || location.origin;
+    const games = [
+      { id: 'village', endpoint: new URL('/api/online', villageServer) },
+      { id: 'holdem', endpoint: new URL('/api/online', document.querySelector('#holdem a').href) },
+    ];
+    const button = document.getElementById('refresh');
+    const clock = new Intl.DateTimeFormat('ko-KR', {
+      timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    });
+    function validCount(value) {
+      return Number.isSafeInteger(value) && value >= 0;
+    }
+    async function update(game) {
+      const card = document.getElementById(game.id);
+      const status = card.querySelector('.state');
+      try {
+        const response = await fetch(game.endpoint, { cache: 'no-store', signal: AbortSignal.timeout(8500) });
+        if (!response.ok) throw new Error('Online status unavailable');
+        const data = await response.json();
+        if (!validCount(data.online)) throw new Error('Invalid online count');
+        if (game.id === 'holdem') {
+          if (!validCount(data.lobby) || !validCount(data.inRooms) || data.lobby + data.inRooms !== data.online) {
+            throw new Error('Invalid room counts');
+          }
+          card.querySelector('.detail').textContent = `로비 ${data.lobby}명 · 방 안 ${data.inRooms}명`;
+        }
+        card.querySelector('.count').textContent = data.online.toLocaleString('ko-KR');
+        card.querySelector('.time').textContent = `${clock.format(new Date())} 갱신`;
+        status.dataset.ok = 'true';
+        status.textContent = '연결됨';
+      } catch {
+        status.dataset.ok = 'false';
+        status.textContent = '갱신 실패';
+      }
+    }
+    async function refresh() {
+      if (button.disabled || document.hidden) return;
+      button.disabled = true;
+      try { await Promise.all(games.map(update)); }
+      finally { button.disabled = false; }
+    }
+    button.addEventListener('click', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    setInterval(refresh, 10000);
+    refresh();
+  </script>
+</body>
+</html>

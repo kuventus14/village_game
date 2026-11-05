@@ -41,6 +41,11 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   }
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/online') {
+    const online = [...players.values()].filter(p => !p.bot && p.ws?.readyState === 1).length;
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ online }));
+  }
   if (req.url.startsWith('/api/')) {
     const ip = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
     return auth.handle(req, res, ip);
