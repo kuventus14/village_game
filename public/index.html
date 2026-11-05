@@ -183,6 +183,7 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
 
 /* 조이스틱 */
 #joy{position:fixed;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;background:rgba(255,255,255,.28);border:3px solid rgba(255,255,255,.7);pointer-events:none}
+#joy.run{border-color:var(--coral);background:rgba(255,122,138,.3)}
 #joy i{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px;border-radius:50%;background:rgba(255,255,255,.85);box-shadow:var(--sh)}
 #toast{position:fixed;left:50%;top:70px;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:999px;padding:9px 18px;font-size:16px;opacity:0;pointer-events:none;transition:opacity .3s;z-index:9;max-width:90vw;text-align:center}
 #toast.on{opacity:.95}
@@ -191,7 +192,6 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
 #rot i{font-style:normal;font-size:72px;animation:rot 2s ease-in-out infinite}
 #rot b{font-size:24px}#rot small{opacity:.6;font-size:14px}
 @keyframes rot{0%,20%{transform:rotate(0)}70%,100%{transform:rotate(-90deg)}}
-@media (pointer:coarse) and (orientation:portrait){#rot{display:flex}}
 /* 폰 가로 화면 */
 @media (max-height:520px) and (orientation:landscape){
   #join{top:0;justify-content:flex-end;align-items:center;padding:8px 14px}
@@ -245,6 +245,12 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
   /* 상황 안내(앉기·타기·기도·낚시·불꽃): 아래 가운데 열만 써서 조이스틱·점프·💬 를 안 가림 (#hud 를 붙여 각 파일 CSS 보다 우선) */
   #hud :is(#sitq,#rtq,#fsq,#rdq,#fwq){bottom:calc(10px + env(safe-area-inset-bottom));min-width:0;max-width:calc(100vw - 340px);padding:6px 12px;gap:4px}
   #bigmap .hd b{font-size:16px}#bigmap .hd small{font-size:11px}
+}
+/* 폰 세로: 아래 버튼 줄(점프·💬·🧘) 바로 위에 안내를 가로로 넓게, 채팅은 미니맵 왼쪽까지 넓게 */
+@media (pointer:coarse) and (orientation:portrait),(max-width:700px) and (orientation:portrait){
+  #chat{width:calc(100vw - 92px - env(safe-area-inset-left));max-width:340px}
+  #log,#dmlog{max-height:min(22dvh,130px)}
+  #hud :is(#sitq,#rtq,#fsq,#rdq,#fwq){bottom:calc(88px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);min-width:min(240px,calc(100vw - 24px))}
 }
 </style>
 </head>
@@ -302,7 +308,6 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
   <div id="autoBar" class="chip" hidden>🚶 자동 걸음 중<button type="button">취소</button></div>
   <div id="mm" role="button" aria-label="지도 (누르면 크게)"><span class="chip mmpl"></span><canvas></canvas></div>
 </div>
-<div id="rot"><i>📱</i><b>가로로 돌려서 플레이해 주세요</b><small>화면 회전 잠금이 켜져 있으면 풀어 주세요</small></div>
 <div id="kick" hidden><b>다른 곳에서 접속했어요</b><small>한 계정은 한 곳에서만 접속할 수 있어요</small><button id="kb" class="big">여기서 다시 접속</button></div>
 <div id="joy" hidden><i></i></div>
 <div id="help" hidden><div class="panel"><div class="hd"><b>📖 사용방법</b><button aria-label="닫기">✕</button></div><dl>

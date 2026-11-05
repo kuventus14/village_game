@@ -27,7 +27,13 @@ export function cleanAvatar(a) {
   for (const k in RANGE) o[k] = Number.isInteger(a?.[k]) && a[k] >= 0 && a[k] < RANGE[k] ? a[k] : d[k];
   return o;
 }
-export const randomAvatar = (g) => { const o = defaultAvatar(g); for (const k in RANGE) o[k] = Math.floor(Math.random() * RANGE[k]); return o; };
+// 머리·옷은 성별에 맞는 것 중에서만 뽑음 (OPT 번호: hs 0 짧은 머리·1 단정 컷 / 2~7 양갈래·긴 생머리·포니테일·똥머리·단발·곱슬, os 2 원피스·3 셔츠넥타이, ac 5 곰돌이 띠)
+const PICK = { m: { hs: [0, 1], os: [0, 1, 3, 4], ac: [0, 1, 2, 3, 4] }, f: { hs: [2, 3, 4, 5, 6, 7], os: [0, 1, 2, 4], ac: [0, 1, 2, 3, 4, 5] } };
+export const randomAvatar = (g) => {
+  const o = defaultAvatar(g), pick = PICK[g === 'f' ? 'f' : 'm'];
+  for (const k in RANGE) o[k] = pick[k] ? pick[k][Math.floor(Math.random() * pick[k].length)] : Math.floor(Math.random() * RANGE[k]);
+  return o;
+};
 export const STATUS = {
   free: ['🙂', '한가해요'],
   working: ['💼', '출근 중'],

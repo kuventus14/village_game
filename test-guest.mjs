@@ -14,6 +14,15 @@ for (const bad of ['관리자', '졸린고양이', '졸린고양이4', '졸린�
 assert.ok(new Set(Array.from({ length: 200 }, () => guestNick())).size > 50, '충분히 다양함');
 console.log(`ok 손님 이름: 형용사 ${GUEST_ADJ.length} × 동물 ${GUEST_ANIMAL.length} × 숫자, 2~10자, 엉뚱한 모양은 거절`);
 
+// ── 1b. 성별에 맞는 머리·옷 (남자: 짧은 머리·단정 컷, 원피스·곰돌이 띠 없음 / 여자: 긴 머리류, 셔츠·넥타이 없음)
+import { randomAvatar } from './public/world.js';
+for (let i = 0; i < 3000; i++) {
+  const m = randomAvatar('m'), f = randomAvatar('f');
+  assert.ok(m.g === 'm' && m.hs <= 1 && m.os !== 2 && m.ac !== 5, 'male ' + JSON.stringify(m));
+  assert.ok(f.g === 'f' && f.hs >= 2 && f.os !== 3, 'female ' + JSON.stringify(f));
+}
+console.log('ok 손님 아바타: 남자는 짧은 머리·원피스 없음, 여자는 긴 머리류·셔츠넥타이 없음');
+
 // ── 2. 서버 통합
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'village-guest-'));
 process.env.DATA_DIR = dir;

@@ -437,13 +437,17 @@ $('#kb').onclick = () => location.reload();
 /* ───────── 조작: PC(WASD+드래그), 폰(왼쪽 조이스틱+오른쪽 드래그) ───────── */
 // 시점: 먼 뷰(기본) / 일반 뷰(어깨 너머) / 하늘 뷰. 설정에서 바꾸면 기기에 기억됨
 const VIEWS = {
-  normal: { name: '일반 뷰', desc: '어깨 너머로 가깝게', pitch: 0.26, dist: 5.2 },
-  far: { name: '먼 뷰', desc: '위에서 넓게 내려다보기', pitch: 0.55, dist: 9 },
-  sky: { name: '하늘 뷰', desc: '마을이 한눈에 보이게', pitch: 1.0, dist: 15 },
+  normal: { name: '일반 뷰', desc: '어깨 너머로 가깝게', pitch: 0.26, dist: 5.2, pk: 1.4 },
+  far: { name: '먼 뷰', desc: '위에서 넓게 내려다보기', pitch: 0.55, dist: 9, pk: 1.4 },
+  sky: { name: '하늘 뷰', desc: '마을이 한눈에 보이게', pitch: 1.0, dist: 15, pk: 1.2 },
 };
+// 세로 화면(폰 세로)은 좌우가 좁아 같은 거리면 답답해서 pk 배만큼 더 멀리서 봄
+for (const v of Object.values(VIEWS)) { const d = v.dist; Object.defineProperty(v, 'dist', { get: () => d * (innerWidth < innerHeight ? v.pk : 1) }); }
 let viewId = store.get('village.view2') ? store.get('village.view') : null; // view2: 기본이 먼 뷰로 바뀐 뒤에 직접 고른 것만 기억(예전 저장값은 한 번 무시)
 if (!VIEWS[viewId]) viewId = 'far';
 let yaw = 0, pitch = VIEWS[viewId].pitch, dist = VIEWS[viewId].dist, tween = null;
+let wasPortrait = innerWidth < innerHeight;
+addEventListener('resize', () => { const pt = innerWidth < innerHeight; if (pt !== wasPortrait) { wasPortrait = pt; if (!tween) tween = VIEWS[viewId]; } }); // 가로↔세로를 돌리면 그 거리로 부드럽게
 function setView(id, save = true) {
   viewId = id; tween = VIEWS[id];
   if (save) { store.set('village.view', id); store.set('village.view2', '1'); }
@@ -547,7 +551,7 @@ cv.addEventListener('pointermove', (e) => {
   }
 });
 const release = (e) => {
-  if (e.pointerId === joy.id) { joy.id = null; joy.dx = joy.dy = 0; $('#joy').hidden = true; }
+  if (e.pointerId === joy.id) { joy.id = null; joy.dx = joy.dy = 0; joy.run = false; $('#joy').hidden = true; $('#joy').classList.remove('run'); }
   if (e.pointerId === look.id) look.id = null;
 };
 cv.addEventListener('pointerup', release);
@@ -700,7 +704,9 @@ function control(dt) {
     let mx = Math.cos(yaw) * ix - Math.sin(yaw) * iy, mz = -Math.sin(yaw) * ix - Math.cos(yaw) * iy;
     if (ad) { [mx, mz] = ad; if (look.id === null) yaw = lerpAng(yaw, Math.atan2(-mx, -mz), 1 - Math.exp(-dt * 1.2)); } // 자동 걸음: 카메라가 천천히 아바타 뒤로 (끌어서 둘러보는 중엔 그대로)
     const l = Math.hypot(mx, mz); mx /= l; mz /= l;
-    const sp = SPEED * (keys.ShiftLeft || keys.ShiftRight || ad?.[2] ? 1.6 : 1) * (joy.id !== null && !ad ? Math.max(0.5, mag) : 1) * dt;
+    if (joy.id !== null) { joy.run = mag >= (joy.run ? 0.7 : 0.88); $('#joy').classList.toggle('run', joy.run); } // 조이스틱을 끝까지 밀면 뜀 (살짝 풀어도 유지되게 0.88 에서 켜고 0.7 아래에서 꺼짐)
+    const jr = joy.id !== null && !ad && joy.run;
+    const sp = SPEED * (keys.ShiftLeft || keys.ShiftRight || ad?.[2] || jr ? 1.6 : 1) * (joy.id !== null && !ad && !jr ? Math.max(0.5, mag) : 1) * dt;
     [me.x, me.z] = MG.clamp(...resolve(me.x + mx * sp, me.z + mz * sp, 0.4, me.fl)); // 피구 중엔 자기 진영 안
     me.tr = Math.atan2(mx, mz);
   }
