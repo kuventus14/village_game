@@ -2,7 +2,7 @@
 // 공유 촛불·연등(3D)·범종 흔들림, 소리(sfx.js) 크기 조절, 설정의 '🔊 소리'·'🙏 내 기록'. 규칙은 서버 rituals.js 가 심판, 화면은 보여 주기만 함.
 // 작동하는 장식은 SPOTS 좌표(종류·번호)에서 계산 → 실내 가구 위치가 바뀌어도 따라감
 import * as THREE from 'three';
-import { SPOTS, SEATS, ACTS, STATUS, SEAT_SPOTS, SONGS, LINE_MS, CANDLE_SLOTS, BUILDINGS, TEMPLE_YARD, SACRED } from './world.js';
+import { SPOTS, SEATS, ACTS, STATUS, SEAT_SPOTS, SONGS, LINE_MS, CANDLE_SLOTS, BUILDINGS, TEMPLE_YARD, SACRED, freeCushions, ON_CUSHION, inside } from './world.js';
 import { sfx } from './sfx.js';
 import { PARTS } from './sacred.js';
 
@@ -44,7 +44,7 @@ const CSS = `
 #rtRec .g{display:grid;grid-template-columns:1fr 1fr;gap:8px}#rtRec .c{background:#fff;border-radius:14px;padding:8px 10px;border:2px solid #efe4f7}
 #rtRec .c i{font-style:normal;font-size:22px}#rtRec .c b{display:block;font-size:20px}#rtRec .c small{opacity:.65;font-size:12px}
 #rtRec .bar{height:8px;border-radius:9px;background:#f1eaf8;margin-top:5px;overflow:hidden}#rtRec .bar i{display:block;height:100%;background:linear-gradient(90deg,#c9a7ff,#ff9fbf)}
-#setMenu .sfx{display:flex;align-items:center;gap:8px;padding:2px 10px 6px}#setMenu .sfx input{flex:1;accent-color:#8a63d2}
+#setMenu .sfx{display:flex;align-items:center;gap:8px;padding:2px 10px 6px}#setMenu .sfx input{flex:1;accent-color:#8a63d2;min-height:28px}#setMenu .sfx span{font-size:13px;min-width:56px;opacity:.75}
 body.rt-piano #jumpBtn,body.rt-piano #fab,body.rt-piano #hint{display:none!important}
 @media (max-height:520px) and (orientation:landscape){
   #rtq{bottom:calc(14px + env(safe-area-inset-bottom));padding:6px 12px;gap:4px;max-width:calc(100vw - 260px)}#rtq b{font-size:15px}#rtq small{font-size:12px}
@@ -70,7 +70,7 @@ const glowTex = (() => { let t; return () => { if (t) return t; const c = docume
 const fmt = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 
-export function createRituals({ scene, players, getMe, send, toast, bubble, host, menu, free, sitq, standUp }) {
+export function createRituals({ scene, players, getMe, send, toast, bubble, host, menu, free, sitq, standUp, walk }) {
   document.head.append(Object.assign(document.createElement('style'), { textContent: CSS }));
   const mk = (h, parent = host) => { const d = document.createElement('div'); d.innerHTML = h.trim(); return parent.appendChild(d.firstElementChild); };
   const q = mk('<div id="rtq" class="panel" hidden></div>');
@@ -87,7 +87,7 @@ export function createRituals({ scene, players, getMe, send, toast, bubble, host
   // ── 설정 메뉴: '🔊 소리' (켜기·크기) + '🙏 내 기록'
   const acct = menu.querySelector('[data-a="edit"]')?.previousElementSibling;
   const mi = document.createElement('div');
-  mi.innerHTML = `<div class="hd">🔊 소리</div><div class="sfx"><button data-sfx="on" aria-pressed="${sfx.on}">${sfx.on ? '켜짐' : '꺼짐'}</button><input type="range" min="0" max="100" value="${Math.round(sfx.vol * 100)}" aria-label="소리 크기"></div>` +
+  mi.innerHTML = `<div class="hd">🔊 소리</div><div class="sfx"><span>효과음</span><button data-sfx="on" aria-pressed="${sfx.on}">${sfx.on ? '켜짐' : '꺼짐'}</button><input type="range" min="0" max="100" value="${Math.round(sfx.vol * 100)}" aria-label="효과음 크기"></div>` +
     '<div class="hd">🙏 성당·사찰·교회</div><button data-rit="rec"><b>내 기록</b><small>절·염주·촛불·찬양 모아 보기</small></button>';
   acct ? acct.before(...mi.children) : menu.append(...mi.children);
   const sfxBtn = menu.querySelector('[data-sfx]'), sfxVol = menu.querySelector('.sfx input');
@@ -176,9 +176,35 @@ export function createRituals({ scene, players, getMe, send, toast, bubble, host
   const label = (k) => (k === 'hymn' ? (shrine.hymn && shrine.hymn.left - (clk() - shrineAt) > 0 ? '🎶 성가 끄기' : ACTS.hymn.name) : k === 'veil' ? (getMe()?.vl ? '🤍 미사포 벗기' : '🤍 미사포 쓰기') : ACTS[k].name);
   function panel(key, html, mini = false) { if (key === qKey) return; qKey = key; q.hidden = !key; q.classList.toggle('mini', mini); if (key) q.innerHTML = html; }
   let cur = { spot: null, list: [] };
+  /* ── 법당 '절하기' = 가장 가까운 빈 방석으로 걸어가서 (자동 걸음 재사용). 방석 위에 있으면 그 자리에서, 막히거나 서버가 거절하면 다음 방석으로 한 번 더 ── */
+  const inHall = (me) => me.pl === 'temple' && inside(BUILDINGS.temple, me.x, me.z);
+  const onCushion = (me) => SPOTS.some((s) => s.kind === 'cushion' && Math.hypot(s.x - me.x, s.z - me.z) < ON_CUSHION);
+  let pend = null; // { tried: 이미 가 본 방석, n: 다시 고른 수, sent: 절을 보낸 방석 }
+  function used(me) { // 다른 사람이 서 있거나 행동 중인 방석
+    return { others: [...players.values()].filter((p) => p !== me).map((p) => [p.x, p.z]), busy: new Set([...acts].filter(([id]) => id !== me.id).map(([, a]) => a.spot)) };
+  }
+  function goBow(again = false) {
+    const me = getMe();
+    if (!again) pend = { tried: new Set(), n: 0 };
+    const { others, busy } = used(me), sp = freeCushions(me.x, me.z, others, busy).find((s) => !pend.tried.has(s.id));
+    if (!sp) { pend = null; return toast(again ? '빈 방석을 찾지 못했어요' : '빈 방석이 없어요'); }
+    pend.tried.add(sp.id);
+    if (myAct) { send({ t: 'act', k: 'stop' }); myAct = null; openUI(null); } // 하던 합장·염주는 그만두고 걸어감
+    walk(sp.x, sp.z, () => arrive(sp));
+  }
+  function arrive(sp) {
+    const me = getMe(); if (!me || !pend) return;
+    const { others, busy } = used(me), taken = busy.has(sp.id) || others.some(([x, z]) => Math.hypot(x - sp.x, z - sp.z) < ON_CUSHION);
+    if (taken || Math.hypot(me.x - sp.x, me.z - sp.z) > 1.2) return retry(); // 걷는 사이 누가 먼저 앉았거나 닿지 못함
+    me.tr = sp.ry; pend.sent = sp.id; // 불상 쪽을 바라봄 (제자리에서 돌기만)
+    send({ t: 'act', k: 'bow', spot: sp.id });
+  }
+  const retry = () => { if (pend && pend.n++ < 1) goBow(true); else { pend = null; toast('빈 방석을 찾지 못했어요'); } };
+
   function start(k, extra = {}) {
     const sp = cur.spot, me = getMe();
     if (!me) return;
+    if (k === 'bow' && inHall(me) && !onCushion(me)) return goBow();
     if (k === 'sing' && !shrine.praise && !extra.song && !choose) { choose = true; qKey = ''; return; } // 곡 고르기
     choose = false;
     const spot = sp && ACTS[k].at.includes(sp.kind) ? sp.id : -1;
@@ -209,6 +235,11 @@ export function createRituals({ scene, players, getMe, send, toast, bubble, host
       return;
     }
     choose = false;
+    if (!sp && inHall(me)) { // 법당 안 통로·자리 밖: 절하기(빈 방석으로)·합장
+      cur = { spot: null, list: ['bow', 'palms'] };
+      panel(`hall${rec.bows}`, `<b>🙇 법당</b><small>절하기를 누르면 가까운 빈 방석으로 가서 절해요 · 절 ${rec.bows || 0}번</small><div class="bt">${cur.list.map((k, i) => `<button ${i ? '' : 'class="go"'} data-a="${k}">${label(k)}${kb(i)}</button>`).join('')}</div>`, true);
+      return;
+    }
     if (!sp) { panel(''); return; }
     const sub = sp.kind === 'cushion' || sp.kind === 'beads' ? `절 ${rec.bows || 0}번 · 108배까지 ${108 - ((rec.bows || 0) % 108)}번` : SUB[sp.kind];
     const lit = sp.kind === 'lantern' && shrine.lanterns.some((c) => c[0] === lanternSpots.indexOf(sp) && c[1] - (clk() - shrineAt) > 0);
@@ -353,11 +384,11 @@ export function createRituals({ scene, players, getMe, send, toast, bubble, host
       if (m.t === 'act') {
         acts.set(m.id, { k: m.k, spot: m.spot, t0: clk(), ms: m.ms, song: m.song });
         if (p) { p.s = m.s; startSound(m, p); if (m.k === 'bell') bubble(p, `🔔 ${p.name}님이 범종을 쳤어요`); if (m.k === 'lantern') bubble(p, `🪷 ${p.name}님이 연등을 밝혔어요`); if (m.k === 'sing' && SONGS[m.song]) bubble(p, `🎤 ${SONGS[m.song].title}`); }
-        if (mine) { myAct = m.k; qKey = ''; openUI(m.k); }
+        if (mine) { myAct = m.k; qKey = ''; openUI(m.k); pend = null; }
       } else if (m.t === 'actend') {
         acts.delete(m.id); if (p) p.s = m.s;
         if (mine) { myAct = null; qKey = ''; openUI(null); if (m.k === 'bow' && m.r === 'done' && auto) setTimeout(() => { if (auto && !myAct) start('bow'); }, 250); else if (m.r !== 'done') auto = false; }
-      } else if (m.t === 'actno') { toast(m.error); auto = false; }
+      } else if (m.t === 'actno') { if (m.k === 'bow' && pend?.sent != null) { pend.sent = null; retry(); } else { toast(m.error); auto = false; } }
       else if (m.t === 'rec') {
         rec = m.rec; qKey = '';
         if (m.ev === '108') { toast('🎉 108배 완성!'); sfx.play('yay', 1); }

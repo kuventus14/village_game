@@ -11,6 +11,8 @@ import { RIDES, FERRIS, CAROUSEL, TRAIN, TRAIN_PATH, TRAIN_STATIONS, TRAIN_HUTS,
 import { soft, Batch, nightGlow, patch, paint } from './gfx.js';
 import { Kit, bx, cy, sp, hdr, signTex, buildKit, lathe } from './buildings.js';
 import { sfx } from './sfx.js';
+import { fx } from './fx.js';
+import { RIDE_SLOTS } from './parkdata.js';
 
 const PI = Math.PI, TAU = PI * 2, TOUCH = matchMedia('(pointer:coarse)').matches;
 const CREAM = '#fff4e6', PINK = '#ffc4d2', HOT = '#ff8fb1', MINT = '#8fdcc4', GOLD = '#ffd45a', LILAC = '#cdb6ff', SKY = '#9fd3ff', LEMON = '#fff0a0', PEACH = '#ffc9a8';
@@ -792,6 +794,38 @@ export function createRides({ scene, camera, Q, players, getMe, send, toast, hos
     if (lastUp && !up && th > 0.5) sfx.play('creak', near(VIKING.x, VIKING.z, 50, r === 'viking'));
     lastTh = th; lastUp = up;
   }
+  // 효과음 2단계 (fx.js: 카메라 기준 거리·좌우, 타고 있으면 그 자리에서 또렷하게): 기구마다 움직임과 맞춘 소리
+  const P3 = { fw: null, fMove: false, ca: null, cs: null, th: 0, dp: '', st: -1, ta: null };
+  function sound3(me, t, dt, b, c, tr) {
+    const at = (x, z, range, g = 1) => ({ x, z, range, g });
+    const F = ferrisAt(t), fv = P3.fw == null ? 0 : Math.abs(F.w - P3.fw) / Math.max(dt, 1e-3), fm = fv > 0.005; P3.fw = F.w; // 대관람차: 기어 웅웅 · 가끔 철골 삐걱 · 출발할 때 곤돌라 종
+    fx.loop('ferris', 'gear', fm ? 0.8 : 0, at(FERRIS.x, FERRIS.z, 75));
+    if (fm && Math.random() < dt / 5) fx.play('steelCreak', { ...at(FERRIS.x, FERRIS.z, 60, 0.8), key: 'fcreak', cd: 3 });
+    if (fm && !P3.fMove) fx.play('gondolaBell', at(FERRIS.x, FERRIS.z, 55)); P3.fMove = fm;
+    const cw = P3.ca == null ? 0 : (c.a - P3.ca) / Math.max(dt, 1e-3); P3.ca = c.a; // 회전목마: 모터 + 말이 오를 때 딸깍 (한 바퀴에 3번 오르내림)
+    fx.loop('carousel', 'carousel', c.run ? 0.9 : 0, { ...at(CAROUSEL.x, CAROUSEL.z, 40), arg: { rate: (Math.abs(cw) * 3) / (2 * PI) * 4 } });
+    const L = train.loco.position; // 꼬마기차: 역에 설 때 브레이크 '끼익', 떠날 때 종 (기적·칙칙폭폭은 sound())
+    if (P3.st < 0 && tr.st.st >= 0) fx.play('brake', { ...at(L.x, L.z, 60), dur: 1.3 });
+    if (P3.st >= 0 && tr.st.st < 0) fx.play('stationBell', at(L.x, L.z, 60)); P3.st = tr.st.st;
+    const cs = b.coaster.s, v = P3.cs == null ? 0 : Math.abs(cs - P3.cs) / Math.max(dt, 1e-3); P3.cs = cs; // 롤러코스터: 레일 덜컹 (빠를수록 촘촘)
+    const onLift = b.coaster.run && (((cs % COASTER_PATH.L) + COASTER_PATH.L) % COASTER_PATH.L) < COASTER.sTop;
+    fx.loop('coaster', 'rumble', b.coaster.run && !onLift ? Math.min(1, v / 14) : 0, { ...at(RIDE_SLOTS.coaster.x, RIDE_SLOTS.coaster.z, 90), arg: { rate: Math.max(1, v / 2.5) } });
+    const th = b.viking.th, w = Math.abs(th - P3.th) / Math.max(dt, 1e-3); P3.th = th; // 바이킹: 흔들림 빠르기에 맞춘 바람
+    fx.loop('viking', 'wind', b.viking.run ? Math.min(1, w / 0.9) * 0.9 : 0, { ...at(VIKING.x, VIKING.z, 50), arg: { f: 300 + 1300 * Math.min(1, w) } });
+    const d = b.drop; // 드롭타워: 올라가는 모터 · 꼭대기 '철컥' · 바닥 쿠션 '푸슉'
+    fx.loop('drop', 'motor', d.ph === 'up' ? 0.8 : 0, { ...at(DROP.x, DROP.z, 70), arg: { f: 80 + (d.y / DROP.top) * 40 } });
+    if (P3.dp === 'up' && d.ph === 'hold') fx.play('clunk', at(DROP.x, DROP.z, 70));
+    if (P3.dp === 'fall' && d.ph !== 'fall') fx.play('puff', at(DROP.x, DROP.z, 70)); P3.dp = d.ph;
+    const sw = swingAt(t); // 회전그네: 체인 찰랑 + 바람 (도는 빠르기에 맞춤)
+    fx.loop('swingWind', 'wind', sw.run ? Math.min(1, sw.w / 0.7) * 0.7 : 0, { ...at(SWING.x, SWING.z, 45), arg: { f: 400 + 800 * Math.min(1, sw.w) } });
+    fx.loop('swingChain', 'jingle', sw.run ? 0.9 : 0, { ...at(SWING.x, SWING.z, 35), arg: { rate: 2 + 14 * Math.min(1, sw.w) } });
+    fx.loop('flume', 'flow', 0.8, at(RIDE_SLOTS.flume.x, RIDE_SLOTS.flume.z, 50)); // 후룸: 물길 졸졸·폭포 쏴아 (풍덩은 sound2)
+    const bp = bumperAt(t).ph === 'run'; // 범퍼카: 모터 윙 + 가끔 천장 전기 '지직' (부딪힘 '통!'은 bumperIn)
+    fx.loop('bumper', 'whine', bp ? 0.8 : 0, at(BUMPER.x, BUMPER.zc, 45));
+    if (bp && Math.random() < dt / 3) fx.play('spark', { ...at(BUMPER.x + (Math.random() - 0.5) * 30, BUMPER.zc + (Math.random() - 0.5) * 16, 40, 0.7), key: 'spark', cd: 1 });
+    const tc = teacupsAt(t), ts = P3.ta == null ? 0 : Math.abs(tc.a - P3.ta) / Math.max(dt, 1e-3); P3.ta = tc.a; // 회전 찻잔: 빠를수록 도는 소리가 높아짐
+    fx.loop('teacups', 'spin', tc.run ? Math.min(1, ts / 1.2) * 0.8 : 0, { ...at(TEACUPS.x, TEACUPS.z, 40), arg: { f: 600 + 1200 * Math.min(1, ts / 1.5) } });
+  }
   // 따라가는 시점 (회전목마 = 뒤에서, 기차 = 바깥 옆에서). 직접 끌어 둘러보면 2.5초 동안은 그대로 둠
   function follow(me, r, dt, t) {
     if (!['carousel', 'train', 'drop', 'swing', 'coaster', 'flume', 'bumper', 'teacups'].includes(r?.r)) { fy = null; pv = null; slope = 0; return; }
@@ -864,7 +898,7 @@ export function createRides({ scene, camera, Q, players, getMe, send, toast, hos
       bumper.outer.visible = !(me.x > hx0 && me.x < hx1 && me.z > hz0 && me.z < hz1); // 경기장 안에선 바깥 껍데기를 숨겨 카메라가 벽에 안 막힘
       fog(r?.r === 'ferris' || r?.r === 'drop' ? me.gy : 0); follow(me, r, dt, t);
       ui(me, t);
-      if (show) { sound(me, c, tr); sound2(me, b2); }
+      if (show) { sound(me, c, tr); sound2(me, b2); sound3(me, t, dt, b2, c, tr); }
     },
     busy: () => !!mine(),
     // 타는 동안 game.js 의 이동 입력(ix 오른쪽+, iy 앞+: 키보드·조이스틱)을 받음 → 범퍼카 운전 / 찻잔 빠르기 (↑↓). 바뀔 때 + 누르고 있으면 0.5초마다 보냄

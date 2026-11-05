@@ -1,6 +1,7 @@
 // 소리: WebAudio 로 합성만 (파일 없음). 목탁·범종·염불·오르간/합창 성가·찬양 반주·피아노·촛불·염주 딸깍·성당 종·풍경.
 // 브라우저는 사용자가 한 번 누르기 전엔 소리를 못 냄 → 첫 터치/키 입력 때 AudioContext 를 만들고, 그 전엔 조용히 아무것도 안 함.
 // 곡은 모두 직접 만든 간단한 화음 진행 (저작권 있는 곡 없음). 거리·건물에 따른 크기는 rituals.js 가 정해서 g(0~1)로 넘김
+import { audio } from './audio.js';
 const KEY = 'village.sfx';
 const S = (() => { try { return { on: true, vol: 0.7, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return { on: true, vol: 0.7 }; } })();
 let ac = null, master = null, rev = null, noiseBuf = null, DEST = null; // DEST: 배경 소리 안에서 낼 때 그 배경의 크기 노드로 보냄
@@ -8,8 +9,8 @@ const mtof = (m) => 440 * 2 ** ((m - 69) / 12);
 
 function init() {
   if (ac || !S.on) { if (ac?.state === 'suspended') ac.resume().catch(() => {}); return; }
-  try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch { ac = null; return; }
-  master = ac.createGain(); master.gain.value = S.vol; master.connect(ac.destination);
+  ac = audio.unlock(); if (!ac) return; // 배경음악과 같은 AudioContext·리미터 (audio.js)
+  master = ac.createGain(); master.gain.value = S.vol; master.connect(audio.out);
   // 잔향: 지수로 줄어드는 잡음 임펄스 3초 (성당·법당 울림)
   const n = ac.sampleRate * 3, ir = ac.createBuffer(2, n, ac.sampleRate);
   for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 3.2; }
@@ -246,7 +247,7 @@ Object.assign(BEDS, {
 const beds = Object.fromEntries(Object.keys(BEDS).map((k) => [k, makeBed((arg) => BEDS[k](arg))]));
 
 export const sfx = {
-  get on() { return S.on; }, get vol() { return S.vol; }, get ctx() { return ac; },
+  get on() { return S.on; }, get vol() { return S.vol; }, get ctx() { return ac; }, get bus() { return master; }, // bus: 효과음 2단계(fx.js)도 같은 크기 노드로
   set(o) { Object.assign(S, o); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} if (S.on) init(); if (master) master.gain.setTargetAtTime(S.on ? S.vol : 0, ac.currentTime, 0.05); },
   play(name, g = 1, delay = 0) { if (ready() && V(g) > 0.003) SND[name](ac.currentTime + delay, V(g)); },
   piano(n, g = 1) { if (ready() && V(g) > 0.003) piano(n, V(g)); },

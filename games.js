@@ -11,6 +11,8 @@ export function createGames({ players, send, bcast, opts = {} }) {
   const run = { tag: null, dodge: null };
   const byId = (id) => players.get(id);
   const now = () => Date.now();
+  // 그 판 참가자(탈락자 포함)에게는 mine, 나머지 사람에게는 others(없으면 안 보냄). 모집 알림(lobby)·판 상태(gstate)·물풍선 그림(balloon·bend)만 모두에게
+  const split = (g, mine, others) => { for (const p of players.values()) { const o = g.parts.has(p.id) ? mine : others; if (o) send(p.ws, o); } };
 
   const pushLobby = (gid) => {
     const G = GAMES[gid], l = lobby[gid];
@@ -55,7 +57,7 @@ export function createGames({ players, send, bcast, opts = {} }) {
         tp(p, DODGE.cx + (team === 0 ? -1 : 1) * (3 + Math.floor(i / 3) * 2.4), DODGE.cz - 3.5 + (i % 3) * 3.5, team === 0 ? Math.PI / 2 : -Math.PI / 2);
       }));
     }
-    bcast({ t: 'gstart', g: gid, ready: READY, dur: G.dur, parts: partsOf(g) });
+    split(g, { t: 'gstart', g: gid, ready: READY, dur: G.dur, parts: partsOf(g) }, { t: 'gstate', g: gid, ph: 'ready', left: g.end - t0, parts: partsOf(g) }); // 구경꾼은 시작 알림 없이 발밑 링만 그림
     pushLobby(gid);
   }
 
@@ -66,7 +68,7 @@ export function createGames({ players, send, bcast, opts = {} }) {
     const g = run[gid];
     if (!g) return;
     run[gid] = null;
-    bcast({ t: 'gend', g: gid, ...result, parts: partsOf(g) });
+    split(g, { t: 'gend', g: gid, ...result, parts: partsOf(g) }, { t: 'gend', g: gid }); // 누가 이겼는지는 참가자만, 구경꾼은 '끝남'만 (링·물풍선 정리)
     [...g.parts.keys()].map(byId).filter(Boolean).forEach((p, i) => sendHome(p, i, GAMES[gid]));
     for (const id of Object.keys(GAMES)) refresh(id);
   }
@@ -77,7 +79,7 @@ export function createGames({ players, send, bcast, opts = {} }) {
     for (const [id, v] of g.parts) { const p = byId(id); if (p) (v.role === 'it' ? its : runs).push([id, p]); }
     for (const [rid, rp] of runs) for (const [iid, ip] of its) {
       if (Math.hypot(rp.x - ip.x, rp.z - ip.z) < TAG_R && Math.abs((rp.y || 0) - (ip.y || 0)) < 0.9) {
-        g.parts.get(rid).role = 'it'; bcast({ t: 'gtag', id: rid, by: iid }); break;
+        g.parts.get(rid).role = 'it'; split(g, { t: 'gtag', id: rid, by: iid }); break;
       }
     }
     const left = [...g.parts].filter(([, v]) => v.role === 'run').map(([id]) => id);
@@ -103,7 +105,7 @@ export function createGames({ players, send, bcast, opts = {} }) {
           const [id, v] = hit;
           v.hp = Math.max(0, v.hp - 1);
           if (v.hp === 0) { v.out = true; const p = byId(id); const [x, z] = dodgeOut(v.team, v.idx); tp(p, x, z, v.team === 0 ? Math.PI / 2 : -Math.PI / 2); }
-          bcast({ t: 'ghit', id, hp: v.hp, by: b.by });
+          split(g, { t: 'ghit', id, hp: v.hp, by: b.by });
         }
       }
     }

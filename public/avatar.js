@@ -37,6 +37,7 @@ export function buildAvatar(a) {
   const skin = SKINS[a.sk], shirt = OUTFITS[a.oc], hair = HAIRS[a.hc], bot = BOTTOMS[a.bc];
   const dress = a.os === 2, overall = a.os === 4, torso = overall ? '#fffaf0' : shirt;
   const root = new THREE.Group(), body = new THREE.Group();
+  root.rotation.order = 'YXZ'; // 눕기(x 기울임)를 바라보는 방향(y) 기준으로
   root.add(body);
 
   // 다리 + 신발
@@ -309,18 +310,33 @@ function stickPose(a) { // 팔 앞각 r·옆각 rz (팔은 아래(-y)로 뻗은 
   return { r: Math.atan2(-dz, -dy), rz: Math.asin(clampN(dx, 0.9)), by };
 }
 
+// 바닥 자세 (game.js 가 a.pose = world.js POSES 이름을 넣음). lift = 몸 높이, tilt = 몸 전체 눕힘, legX = 다리 앞각, 팔 l·r(앞각)·lz·rz(옆각), hx 고개, bx 허리
+function floorPose(k, t) {
+  const P = { lift: 0, tilt: 0, legX: null, l: 0, r: 0, lz: 0.06, rz: 0, hx: 0, bx: 0 };
+  if (k === 'sit') { P.lift = -0.27; P.legX = -1.5; P.l = P.r = 0.5; P.lz = -0.35; P.rz = 0.35; P.bx = -0.1; P.hx = -0.05 + Math.sin(t * 0.9) * 0.04; } // 엉덩이를 바닥에, 다리 앞으로 쭉, 손은 뒤로 짚기
+  else if (k === 'lie') { P.lift = 0.05; P.tilt = -1.2; P.legX = 0; P.l = P.r = -0.15; P.lz = -1.15; P.rz = 1.15; P.hx = -0.1; } // 등을 대고 하늘 보기: 머리가 커서 완전히 눕히면 땅에 묻힘 → 약 70°만 눕혀 뒤통수·등·발꿈치가 땅에 닿게 (베개 벤 듯)
+  else if (k === 'cheer') { const b = Math.abs(Math.sin(t * 5)); P.l = P.r = -0.15; P.lz = -2.6 - b * 0.2; P.rz = 2.6 + b * 0.2; P.hx = -0.18; P.lift = b * 0.05; P.ay = 0.14; P.as = 0.45; } // 만세! 두 팔을 옆으로 쭉 올려 V 자로 들썩 (2등신이라 팔이 짧아서 어깨를 올리고 팔을 늘려야 머리 옆 위로 보임)
+  else if (k === 'wave') { P.r = -0.2; P.rz = 2.45 + Math.sin(t * 9) * 0.4; P.hx = -0.05; P.ay = 0.12; P.as = 0.4; } // 오른손을 옆으로 높이 들어 좌우로 흔듦
+  else if (k === 'clap') { const c = Math.abs(Math.sin(t * 9)); P.l = P.r = -1.3; P.lz = 0.45 + c * 0.45; P.rz = -(0.45 + c * 0.45); P.hx = -0.08; } // 가슴 앞에서 짝짝
+  else if (k === 'greet') { const d = Math.sin(Math.min(1, (t % 2.4) / 1.2) * Math.PI); P.bx = 0.55 * d; P.hx = 0.3 * d; P.l = P.r = -0.25 * d; P.lz = 0.35; P.rz = -0.35; } // 꾸벅 (2.4초마다)
+  return P;
+}
+
 // 매 프레임: 걷기/가만히/타자/커피/앉기/손 흔들기 동작. seat = 앉은 자리({kind,h}) 또는 null
 export function animate(a, dt, walking, status, seat) {
   const k = 1 - Math.exp(-dt * 14), kind = ['slot', 'poker', 'bj'].includes(seat?.kind) ? 'office' : seat?.kind; // 카지노 자리는 모니터 보듯 앞으로 손을 모음
   walking = walking && !seat;
   const P = a.act && !walking ? actPose(a.act, a.actT || 0, seat, a.actFont) : null;
   if (P?.sit) seat = { kind: 'piano', h: 0.45 }; // 피아노 의자에 앉은 것처럼
+  if (a.pose && a.pose !== a.poseK) { a.poseK = a.pose; a.poseT0 = a.t || 0; } // 자세를 바꾼 순간부터 동작 시간
+  const F = a.pose && !walking && !seat && !P ? floorPose(a.pose, (a.t || 0) - (a.poseT0 || 0)) : null;
   a.t = (a.t || 0) + dt;
   a.phase += dt * (walking ? 11 : 2.2);
   const sw = walking ? Math.sin(a.phase) : 0;
   const bob = walking ? Math.abs(Math.sin(a.phase)) * 0.07 : Math.sin(a.phase) * 0.012;
   const ease = (o, key, v) => (o[key] += (v - o[key]) * k);
-  a.lift = (a.lift || 0) + ((seat ? seat.h - 0.32 : -(P?.drop || 0)) - (a.lift || 0)) * k; // 앉으면 엉덩이가 앉는 면 높이로
+  a.lift = (a.lift || 0) + ((seat ? seat.h - 0.32 : F ? F.lift : -(P?.drop || 0)) - (a.lift || 0)) * k; // 앉으면 엉덩이가 앉는 면 높이로
+  ease(a.root.rotation, 'x', F?.tilt || 0); // 눕기 (약 0.3초에 걸쳐 스르륵)
   a.root.position.y = a.lift + (a.jy || 0) + (a.gy || 0); // jy = 점프로 뜬 높이, gy = 서 있는 층의 높이
   const air = !seat && (a.jy || 0) > 0.05;
   ease(a.body.position, 'y', bob);
@@ -333,6 +349,7 @@ export function animate(a, dt, walking, status, seat) {
   ease(a.legs[1].rotation, 'x', ride ? -0.55 : seat ? -1.45 - legSwing : air ? 0.3 : -sw * 0.8);
   a.legs.forEach((lg, i) => ease(lg.rotation, 'z', ride ? (i ? 0.38 : -0.38) : 0));
   if (P?.legX != null && !seat) for (const lg of a.legs) ease(lg.rotation, 'x', P.legX); // 무릎 꿇기
+  if (F?.legX != null) for (const lg of a.legs) ease(lg.rotation, 'x', F.legX); // 바닥에 앉기·눕기
 
   let l = walking ? -sw * 0.9 : 0, r = walking ? sw * 0.9 : 0, rz = 0, hx = 0, bx = 0;
   if (status === 'working' && !walking) { l = -1.15 + Math.sin(a.phase * 5) * 0.08; r = -1.15 + Math.cos(a.phase * 5) * 0.08; } // 타자 치는 중
@@ -349,6 +366,7 @@ export function animate(a, dt, walking, status, seat) {
   }
   let lz = 0.06, az = 0;
   if (P) ({ l, r, rz, lz, az, hx, bx } = P);
+  if (F) ({ l, r, rz, lz, hx, bx } = F);
   let by = 0;
   if (a.stick && !walking) ({ r, rz, by } = stickPose(a));
   if (air) { l = r = -2.6; rz = 0.25; } // 점프: 만세!
@@ -358,6 +376,7 @@ export function animate(a, dt, walking, status, seat) {
   ease(a.arms[1].rotation, 'z', rz);
   ease(a.arms[0].rotation, 'z', lz);
   for (const am of a.arms) ease(am.position, 'z', az);
+  for (const am of a.arms) { ease(am.position, 'y', 0.78 + (F?.ay || 0)); ease(am.scale, 'y', 1 + (F?.as || 0)); } // 만세·손 흔들기: 어깨를 살짝 올리고 팔을 늘임
   ease(a.head.rotation, 'x', hx);
   ease(a.body.rotation, 'x', bx);
   ease(a.body.rotation, 'y', by);

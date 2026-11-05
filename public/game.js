@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ACT_STATUS, BUILDINGS, OUTFITS, STATUS, PLACE, SEATS, SIT_STATUS, SIT_TEXT, standPos, randomAvatar, FLOOR_H, PORTALS, transitAt, inside, placeOf, resolve, floorY, FACADES } from './world.js';
+import { ACT_STATUS, POSES, BUILDINGS, OUTFITS, STATUS, PLACE, SEATS, SIT_STATUS, SIT_TEXT, standPos, randomAvatar, FLOOR_H, PORTALS, transitAt, inside, placeOf, resolve, floorY, FACADES } from './world.js';
 import { buildAvatar, disposeAvatar, animate, createCrowd } from './avatar.js';
 import { api, wsUrl } from './api.js';
 import { createEditor } from './editor.js';
@@ -24,6 +24,10 @@ import { createCamp } from './camp.js';
 import { createParkSite } from './park-site.js';
 import { createZoo } from './zoo.js';
 import { createRides } from './rides.js';
+import { createBgm } from './bgm.js';
+import { createFx } from './fx.js';
+import { createFootsteps } from './footsteps.js';
+import { createFireflies } from './fireflies.js';
 import { camRig, PMIN, PMAX, TILT } from './camrig.js';
 
 const $ = (s) => document.querySelector(s);
@@ -33,7 +37,8 @@ if (window.visualViewport) { const vv = visualViewport, fitVV = () => document.d
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} }, del: (k) => { try { localStorage.removeItem(k); } catch {} } };
 const lerp = (a, b, t) => a + (b - a) * t;
 const lerpAng = (a, b, t) => a + ((((b - a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI) * t;
-const toast = (() => { let t; return (m) => { const el = $('#toast'); el.textContent = m; el.classList.add('on'); clearTimeout(t); t = setTimeout(() => el.classList.remove('on'), 2400); }; })();
+let toastSound = null; // 알림 '띵' (fx.js 를 만든 뒤 연결)
+const toast = (() => { let t; return (m) => { toastSound?.(); const el = $('#toast'); el.textContent = m; el.classList.add('on'); clearTimeout(t); t = setTimeout(() => el.classList.remove('on'), 2400); }; })();
 
 /* ───────── 장면 ───────── */
 const renderer = new THREE.WebGLRenderer({ canvas: $('#c'), antialias: !Q.post, powerPreference: 'high-performance' }); // 후처리 단계는 자체 MSAA 타깃을 씀
@@ -224,13 +229,26 @@ for (const [k, [em, label]] of Object.entries(STATUS)) {
   b.onclick = () => { send({ t: 'st', s: k }); me.s = k; renderTag(me); renderMeta(); $('#stMenu').hidden = true; };
   $('#stMenu').append(b);
 }
-const MENUS = ['#roster', '#stMenu', '#setMenu'];
+const MENUS = ['#roster', '#stMenu', '#setMenu', '#poseMenu'];
 const toggleMenu = (id) => MENUS.forEach((m) => ($(m).hidden = m === id ? !$(m).hidden : true));
 $('#stBtn').onclick = () => toggleMenu('#stMenu');
 $('#who').onclick = () => toggleMenu('#roster');
 $('#setBtn').onclick = () => toggleMenu('#setMenu');
 $('#menuBtn').onclick = () => { toggleMenu('#setMenu'); $('#setMenu').scrollTop = 0; }; // 폰 ≡ = 설정 메뉴 (맨 위에 폰 전용 칸 #phm)
-document.addEventListener('pointerdown', (e) => { if (phoneUI.matches && !e.target.closest('#top,#roster,#stMenu,#setMenu,#pmenu')) toggleMenu(); }); // 폰: 메뉴 바깥을 누르면 닫힘
+document.addEventListener('pointerdown', (e) => { if (phoneUI.matches && !e.target.closest('#top,#roster,#stMenu,#setMenu,#pmenu,#poseBtn,#poseMenu')) toggleMenu(); }); // 폰: 메뉴 바깥을 누르면 닫힘
+// 바닥 자세 (앉기·눕기·만세·손 흔들기·박수·인사): 🧘 버튼·P 키 → 작은 목록. 서버가 pose 로 모두에게 중계, 움직이거나 점프하면 풀림 (control)
+$('#poseMenu').innerHTML = Object.entries(POSES).map(([k, [em, nm]], i) => `<button data-pose="${k}">${em} ${nm}<kbd>${i + 1}</kbd></button>`).join('') + '<button class="up" data-pose="">🧍 일어나기<kbd>0</kbd></button>';
+let poseAt = 0;
+function markPose() { const k = me?.pose || ''; $('#poseBtn').setAttribute('aria-pressed', !!k); document.querySelectorAll('#poseMenu [data-pose]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.pose === k && !!k)); }
+function setPose(k) {
+  $('#poseMenu').hidden = true;
+  if (!me || k === (me.pose || '')) return;
+  if (k && (me.sit >= 0 || MG.active() || RIDE.busy() || FISH.busy() || RIT.acting() || CMP.drawing() || me.transit || auto)) return toast('지금은 자세를 바꿀 수 없어요');
+  if (k && performance.now() - poseAt < 300) return; // 서버 상한(0.25초)보다 조금 느리게
+  poseAt = performance.now(); me.pose = k; markPose(); send({ t: 'pose', p: k });
+}
+$('#poseBtn').onclick = () => { toggleMenu('#poseMenu'); markPose(); };
+$('#poseMenu').onclick = (e) => { const b = e.target.closest('[data-pose]'); if (b) setPose(b.dataset.pose); };
 $('#chatBtn').onclick = () => { setChat(!chatOpen()); if (chatOpen() && !coarse) $('#ci').focus(); };
 setChat(store.get('village.chat') === '1', false);
 $('#cf').onsubmit = (e) => {
@@ -252,6 +270,7 @@ function connect() {
   ws.onclose = () => { if (phase === 'play' && !kicked) { toast('연결이 끊겼어요. 다시 연결 중…'); for (const id of [...players.keys()]) removePlayer(id); me = null; setTimeout(connect, 1500); } };
 }
 function handle(m) {
+  FX.msg(m); // 소리만 (규칙은 아래 그대로)
   if (MG?.handle(m)) return; // 미니게임 메시지
   if (FISH.handle(m)) return; // 낚시 메시지 (welcome 은 도감만 읽고 넘김)
   if (RIT.handle(m)) return; // 성당·사찰·교회 행동 (welcome 은 기록·공유 상태만 읽고 넘김)
@@ -287,6 +306,8 @@ function handle(m) {
   else if (m.t === 'full') toast('마을이 꽉 찼어요 😢');
   else if (m.t === 'join') { addPlayer(m.p); toast(`${m.p.name}님이 놀러 왔어요 👋`); renderMeta(); }
   else if (m.t === 'sitfail') toast('앗, 그 자리엔 이미 누가 앉았어요');
+  else if (m.t === 'pose') { const p = players.get(m.id); if (p) p.pose = m.p; if (p === me) markPose(); }
+  else if (m.t === 'posefail') { me.pose = ''; markPose(); toast('지금은 자세를 바꿀 수 없어요'); }
   else if (m.t === 'leave') { removePlayer(m.id); renderMeta(); }
   else if (m.t === 's') {
     for (const [id, x, z, ry, w, y] of m.p) { const p = players.get(id); if (p && p !== me) Object.assign(p, { tx: x, tz: z, tr: ry, walking: !!w, ty: y }); }
@@ -439,11 +460,16 @@ $('#setMenu').insertAdjacentHTML('beforeend', '<div class="hd">👤 내 계정</
 // 연못 낚시 (fishing.js): 안내·낚싯대·찌·결과·도감. 설정 메뉴에 '낚시 도감'을 넣으므로 메뉴를 다 만든 뒤에 만듦
 const FISH = createFishing({ scene, players, getMe: () => me, send, toast, bubble, host: $('#hud'), menu: $('#setMenu'), canPrompt: () => !MG.active() && !me.transit && me.sit < 0 && $('#sitq').hidden });
 // 성당·사찰·교회 활동 (rituals.js): 자리 앞 행동 패널·염주·묵주·고해·피아노·찬양·공동 의식·소리. 설정에 '🔊 소리'·'🙏 내 기록'
-const RIT = createRituals({ scene, players, getMe: () => me, send, toast, bubble, host: $('#hud'), menu: $('#setMenu'), free: () => !MG.active() && !me.transit && !FISH.busy(), sitq: $('#sitq'), standUp: () => { if (me?.sit >= 0) standUp(); } });
+const RIT = createRituals({ scene, players, getMe: () => me, send, toast, bubble, host: $('#hud'), menu: $('#setMenu'), free: () => !MG.active() && !me.transit && !FISH.busy(), sitq: $('#sitq'), standUp: () => { if (me?.sit >= 0) standUp(); }, walk: (x, z, done) => autoWalk(x, z, false, done) }); // walk: 사찰 '절하기' → 빈 방석까지 자동 걸음
 // 불멍 캠프·손으로 그리는 불꽃놀이 (camp.js): 모닥불·여는 시간·'불꽃놀이 할까요?' 패널·그리기 레이어·소리
 // 놀이기구 (rides.js): 기구 모양·타기 안내·탄 사람 움직임. 서버 규칙은 rides.js(서버), 약속은 docs/PARK.md
 const RIDE = createRides({ scene, camera, Q, players, getMe: () => me, send, toast, bubble, host: $('#hud'), aim: (p, d, y) => { if (y != null) yaw = y; tween = p == null ? VIEWS[viewId] : { pitch: p, dist: d }; } }); // aim: 타는 동안 시점 (null = 원래 시점)
 const CMP = createCamp({ scene, camera, renderer, Q, players, getMe: () => me, send, toast, bubble, host: $('#hud'), free: () => !MG.active() && !me.transit && !FISH.busy() && !RIT.acting(), sitq: $('#sitq'), standUp: () => { if (me?.sit >= 0) standUp(); } });
+// 배경음악 (bgm.js): 낮·밤·놀이공원·숲길 곡을 구역에 따라 섞음. 설정 '🔊 소리'에 '배경음악' 줄 (효과음 줄 다음)
+const BGM = createBgm({ menu: $('#setMenu'), lite: Q.lite });
+// 효과음 2단계 (fx.js: 마을·기구·동물원·게임·낚시·카지노 소리, footsteps.js: 발소리) · 반딧불이 (fireflies.js: 숲길·사찰 마당·불멍 공터, 밤에만)
+const FX = createFx({ players, getMe: () => me }), STEPS = createFootsteps({ players, getMe: () => me }), FF = createFireflies(scene, Q);
+toastSound = () => FX.ui('toast');
 $('#setMenu').onclick = async (e) => {
   const b = e.target.closest('[data-v],[data-a],[data-q],[data-t]');
   if (!b) return;
@@ -475,6 +501,12 @@ addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('#help').hidden) { $('#help').hidden = true; return; }
   if (phase === 'play' && me && MAP.key(e, !RIT.acting() && !document.body.classList.contains('rt-piano'))) { e.preventDefault(); return; } // M 지도 (열려 있는 동안은 다른 키를 먹음)
   if (e.key === 'Enter' && phase === 'play') { e.preventDefault(); setChat(true); $('#ci').focus(); return; }
+  if (phase === 'play' && me && e.code === 'KeyP') { toggleMenu('#poseMenu'); markPose(); return; } // 자세 목록
+  if (phase === 'play' && me && !$('#poseMenu').hidden) { // 목록이 열려 있으면 숫자로 고름
+    const i = /^Digit[0-9]$/.test(e.code) ? +e.code[5] : -1;
+    if (e.key === 'Escape') { $('#poseMenu').hidden = true; return; }
+    if (i >= 0 && i <= Object.keys(POSES).length) { e.preventDefault(); setPose(i ? Object.keys(POSES)[i - 1] : ''); return; }
+  }
   if (phase === 'play' && me && RIT.key(e)) { e.preventDefault(); return; } // 1·2·3·E 행동, 염주 ↑↓, 피아노 건반
   if (phase === 'play' && me && CMP.key(e)) { e.preventDefault(); return; } // E 불꽃놀이, 그리는 중 Esc
   if (phase === 'play' && me && RIDE.key(e)) { e.preventDefault(); return; } // 놀이기구 타기·내리기
@@ -538,6 +570,7 @@ const SPOT = { cafe: '카페', office: '회사', park: '공원', slot: '슬롯�
 const FL_KO = ['1층 슬롯', '2층 홀덤', '3층 블랙잭'];
 function sitUI() {
   const q = $('#sitq');
+  if ($('#poseBtn').hidden !== !!MG.active()) $('#poseBtn').hidden = !!MG.active(); // 게임 중엔 자세 버튼 숨김 (폰은 그 자리에 던지기 버튼)
   if (MG.active() || me.transit || FISH.busy() || RIT.owns() || CMP.owns() || CMP.drawing() || RIDE.busy()) { q.hidden = true; sitKey = ''; sitTarget = -1; return; } // 게임·층 이동·행동 중엔 안내 숨김 (의자 행동 패널이 '일어나기'도 맡음)
   let key = '';
   sitTarget = -1; portalNear = null;
@@ -592,13 +625,14 @@ function pathWorker() {
     if (m.ready) { pfReady = true; window.__village.pathBuildMs = m.buildMs; return; }
     if (!auto || m.id !== pfId || !me) return; // 그 사이 취소했거나 새 목적지를 누름
     if (!m.path) return stopAuto('그곳까지 걸어갈 길이 없어요');
+    if (auto.done) return Object.assign(auto, { path: Math.hypot(m.to[0] - auto.want[0], m.to[1] - auto.want[1]) > 0.05 ? [...m.path, auto.want] : m.path, i: 1, chk: null }); // 방석처럼 그 점까지 가야 하면 마지막은 곧게
     if (!auto.told && Math.hypot(m.to[0] - auto.want[0], m.to[1] - auto.want[1]) > 3) { auto.told = 1; toast('들어갈 수 없는 곳이라 가장 가까운 곳까지 갈게요'); }
     Object.assign(auto, { to: m.to, path: m.path, i: 1, chk: null });
   };
   pfw.onerror = () => { pfw = null; stopAuto('자동 걸음을 쓸 수 없어요'); };
   return pfw;
 }
-function autoWalk(x, z, again) {
+function autoWalk(x, z, again, done) { // done: 도착하면 부를 일 (있으면 0.25m 까지 바짝 다가감, '도착했어요' 알림 없음)
   if (!me) return;
   if (MG.active() || RIDE.busy() || me.transit || RIT.acting() || CMP.drawing()) return toast('지금은 자동 걸음을 쓸 수 없어요');
   if (me.fl) return toast('위층에서는 자동 걸음이 안 돼요 · 1층에서 써 주세요'); // 지도는 1층 땅만 보여 줌
@@ -606,7 +640,7 @@ function autoWalk(x, z, again) {
   if (!w) return toast('자동 걸음을 쓸 수 없어요');
   if (me.sit >= 0) standUp();
   if (FISH.busy()) FISH.cancel();
-  if (!again) auto = { to: [x, z], want: [x, z] }; // 걷는 중에 새 곳을 누르면 바꿈
+  if (!again) auto = { to: [x, z], want: [x, z], done, near: done ? 0.25 : 0.6 }; // 걷는 중에 새 곳을 누르면 바꿈
   $('#autoBar').hidden = false;
   w.postMessage({ id: ++pfId, x0: me.x, z0: me.z, x1: x, z1: z });
   if (!pfReady && !again) toast('길을 찾는 중이에요…');
@@ -618,12 +652,12 @@ function autoStep() {
   const P = auto.path, now = performance.now();
   if (!P) return null;
   while (auto.i < P.length - 1 && Math.hypot(P[auto.i][0] - me.x, P[auto.i][1] - me.z) < 1.2) auto.i++;
-  const end = P.at(-1), left = Math.hypot(end[0] - me.x, end[1] - me.z);
-  if (left < 0.6) return stopAuto('📍 도착했어요'), null;
+  const end = P.at(-1), left = Math.hypot(end[0] - me.x, end[1] - me.z), arrive = () => { const f = auto.done; stopAuto(f ? null : '📍 도착했어요'); if (f) { me.walking = false; sendPos(); f(); } }; // 도착 위치를 먼저 보내야 서버가 다음 위치를 '움직임'으로 보지 않음 (절이 바로 취소되지 않게)
+  if (left < auto.near) return arrive(), null;
   if (!auto.chk) auto.chk = { t: now, x: me.x, z: me.z };
   else if (now - auto.chk.t > 1500) {
     auto.n = Math.hypot(me.x - auto.chk.x, me.z - auto.chk.z) < 1 ? (auto.n || 0) + 1 : 0;
-    if (auto.n && left < 2.5) return stopAuto('📍 도착했어요'), null; // 목적지 바로 앞 가구·물가에 막힘 = 다 왔음
+    if (auto.n && left < 2.5) return arrive(), null; // 목적지 바로 앞 가구·물가에 막힘 = 다 왔음
     if (auto.n >= 3) return stopAuto('길이 막혀서 자동 걸음을 멈췄어요'), null;
     auto.chk = { t: now, x: me.x, z: me.z };
     if (auto.n === 1) { auto.path = null; autoWalk(...auto.to, true); return null; } // 한 번 막히면 지금 자리에서 길 다시 찾기
@@ -632,6 +666,10 @@ function autoStep() {
   for (let k = auto.i; k < P.length - 1; k++) rest += Math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]);
   const dx = P[auto.i][0] - me.x, dz = P[auto.i][1] - me.z, d = Math.hypot(dx, dz) || 1;
   return [dx / d, dz / d, rest > 50]; // 멀면(50m 넘게 남음) Shift 처럼 달리다가 가까워지면 걷기
+}
+function sendPos() { // 내 위치 보내기 (바뀌었을 때만)
+  const s = `${me.x.toFixed(2)},${me.z.toFixed(2)},${me.ry.toFixed(2)},${me.walking ? 1 : 0},${me.jy.toFixed(2)}`;
+  if (s !== lastSent) { lastSent = s; send({ t: 'm', x: +me.x.toFixed(2), z: +me.z.toFixed(2), ry: +me.ry.toFixed(2), w: me.walking ? 1 : 0, y: +me.jy.toFixed(2) }); }
 }
 function control(dt) {
   if (!me) return;
@@ -649,6 +687,7 @@ function control(dt) {
     if (me.jy <= 0) me.jy = me.vy = 0;
   }
   const mag = MG.locked() || me.transit ? 0 : ad ? 1 : Math.min(1, Math.hypot(ix, iy)), seat = me.sit >= 0 ? SEATS[me.sit] : null;
+  if (me.pose && (mag > 0.12 || me.vy > 0)) { me.pose = ''; markPose(); send({ t: 'pose', p: '' }); } // 움직이거나 점프하면 자세가 풀림
   if (seat && mag > 0.12) standUp(); // 앉아 있다가 움직이면 일어남
   else if (seat) { // 자리로 스르륵 들어가 앉아서 가만히
     const q = 1 - Math.exp(-dt * 12);
@@ -667,11 +706,7 @@ function control(dt) {
   }
   me.ry = lerpAng(me.ry, me.tr, 1 - Math.exp(-dt * 14));
   sendT += dt;
-  if (sendT > 0.08) {
-    sendT = 0;
-    const s = `${me.x.toFixed(2)},${me.z.toFixed(2)},${me.ry.toFixed(2)},${me.walking ? 1 : 0},${me.jy.toFixed(2)}`;
-    if (s !== lastSent) { lastSent = s; send({ t: 'm', x: +me.x.toFixed(2), z: +me.z.toFixed(2), ry: +me.ry.toFixed(2), w: me.walking ? 1 : 0, y: +me.jy.toFixed(2) }); }
-  }
+  if (sendT > 0.08) { sendT = 0; sendPos(); }
   if (!me.pl || me.pl !== placeOf(me.x, me.z)) me.pl = placeOf(me.x, me.z);
 }
 
@@ -774,6 +809,7 @@ renderer.setAnimationLoop(() => {
     p.av.root.position.x = p.x; p.av.root.position.z = p.z; p.av.root.rotation.y = p.ry;
     const hide = inC && p !== me && Math.abs(p.gy - me.gy) > 1.8; // 카지노에서 다른 층 사람은 천장·바닥에 가려 안 보임
     const d = p === me ? 0 : p.camD, full = !hide && d <= cut; // 가까운 사람만 진짜 아바타 + 동작, 멀면 간단한 모양, 아주 멀면 안 그림
+    p.av.pose = p.pose;
     if (full) animate(p.av, dt, p.walking, p.s, p.sit >= 0 ? SEATS[p.sit] : p.ride || MG.sitFor(p)); // 피구 탈락자는 주저앉음, 놀이기구는 그 자리에 앉음
     else { p.av.root.position.y = p.gy + p.jy; if (!hide && d < LOD.far) crowd.add(p.a, p.x, p.av.root.position.y - (p.sit >= 0 || p.ride ? 0.25 : 0), p.z, p.ry); }
     p.av.root.visible = full;
@@ -799,6 +835,9 @@ renderer.setAnimationLoop(() => {
   FISH.update(dt, T);
   RIT.update(dt);
   CMP.update(dt);
+  FF.update(dt, camera, renderer, atmo.state.night);
+  BGM.update(dt, { night: atmo.state.night, x: me?.x, z: me?.z, pl: me?.pl, inKey, glow: FF.glow });
+  FX.update(dt, { camera, night: atmo.state.night, inKey }); STEPS.update(dt);
   outdoors.park.update(dt, camera); outdoors.zoo.update(dt, camera);
   if (phase === 'play') MAP.draw(now); // 15번/초만 다시 그림
   U.time.value = T;
@@ -816,4 +855,4 @@ function perfTick(raw, t0) {
   if (perf.acc < 1) return;
   Object.assign(perf, { fps: +(perf.n / perf.acc).toFixed(1), ms: +((perf.acc / perf.n) * 1000).toFixed(1), cpu: +(perf.cpuAcc / perf.n).toFixed(2), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, n: 0, acc: 0, cpuAcc: 0 });
 }
-window.__village = { players, get me() { return me; }, get auto() { return auto; }, autoWalk, map: MAP, camera, scene, renderer, post, quality: Q, perf, atmo, makeClock, cam: (y, p = pitch, d = dist) => { yaw = y; pitch = p; dist = d; tween = null; } }; // 시험·디버깅용 (cam = 시점 돌리기)
+window.__village = { players, get me() { return me; }, get auto() { return auto; }, autoWalk, map: MAP, bgm: BGM, fx: FX, fireflies: FF, camera, scene, renderer, post, quality: Q, perf, atmo, makeClock, cam: (y, p = pitch, d = dist) => { yaw = y; pitch = p; dist = d; tween = null; } }; // 시험·디버깅용 (cam = 시점 돌리기)

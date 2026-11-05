@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { SPOTS, SEATS, CANDLE_SLOTS, LIGHT_MS, RITUAL_MS } from './public/world.js';
+import { SPOTS, SEATS, CANDLE_SLOTS, LIGHT_MS, RITUAL_MS, BUILDINGS, freeCushions, ON_CUSHION, inside, resolve } from './public/world.js';
 import { createRituals, ritualsAt, BELL_CD } from './rituals.js';
 
 const S = (kind, i = 0) => SPOTS.filter((s) => s.kind === kind)[i];
@@ -18,6 +18,25 @@ assert.deepEqual(ritualsAt(KST18 + RITUAL_MS - 1).length, 2, '10분 동안');
 assert.deepEqual(ritualsAt(KST18 + RITUAL_MS).length, 0, '10분 뒤 끝');
 assert.deepEqual(ritualsAt(KST18 - 13 * 3600e3).map((r) => r.place).sort(), ['church', 'temple'], '05:00 사찰 예불 + 교회 새벽 예배');
 assert.equal(ritualsAt(KST18 - 12 * 3600e3).length, 0, '06:00 엔 없음');
+
+// ── 사찰 '절하기' 자동 걸음: 가장 가까운 빈 방석 고르기 (화면 public/rituals.js 가 씀)
+{
+  const all = SPOTS.filter((s) => s.kind === 'cushion'), T = BUILDINGS.temple;
+  assert.equal(all.length, 100, '방석 100개');
+  for (const c of all) { assert.ok(inside(T, c.x, c.z), '방석은 법당 안'); const [x, z] = resolve(c.x, c.z, 0.4, 0); assert.ok(Math.hypot(x - c.x, z - c.z) < 0.05, `방석 ${c.id} 위에 설 수 있음 (자동 걸음이 닿음)`); }
+  const bud = SPOTS.find((s) => s.kind === 'buddha');
+  const L = freeCushions(bud.x, bud.z);
+  assert.equal(L.length, 100, '아무도 없으면 전부 빈 방석');
+  for (let i = 1; i < L.length; i++) assert.ok(Math.hypot(L[i].x - bud.x, L[i].z - bud.z) >= Math.hypot(L[i - 1].x - bud.x, L[i - 1].z - bud.z), '가까운 순서');
+  assert.ok(L.every((s) => s.kind === 'cushion'), '염주 자리·불상 앞은 방석으로 치지 않음');
+  const [c0, c1, c2] = L;
+  assert.deepEqual(freeCushions(bud.x, bud.z, [[c0.x + 0.1, c0.z]])[0], c1, '누가 서 있는 방석은 건너뜀');
+  assert.equal(freeCushions(bud.x, bud.z, [[c0.x + ON_CUSHION + 0.05, c0.z]])[0], c0, '옆 통로에 선 사람은 방석을 쓰는 게 아님');
+  assert.deepEqual(freeCushions(bud.x, bud.z, [], new Set([c0.id, c1.id]))[0], c2, '절·염주 중인 방석도 건너뜀');
+  const far = all.reduce((a, b) => (b.z > a.z ? b : a)); // 문 쪽 끝 줄
+  assert.equal(freeCushions(far.x, far.z)[0], far, '내 발밑 방석이 가장 가까움');
+  assert.equal(freeCushions(0, 0, all.map((s) => [s.x, s.z])).length, 0, '다 차면 빈 방석 없음');
+}
 
 // ── 가짜 시계로 규칙만
 {

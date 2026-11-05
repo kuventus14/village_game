@@ -75,7 +75,7 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
 .tag .nm{pointer-events:auto;cursor:pointer}
 #roster div{cursor:pointer}
 #czroot{position:fixed;inset:0;pointer-events:none;z-index:4}
-.cz-open #jumpBtn{display:none}
+.cz-open #jumpBtn,.cz-open #poseBtn,.cz-open #poseMenu{display:none}
 /* 미니게임 */
 #gbar{position:absolute;top:calc(56px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;width:min(560px,calc(100vw - 20px))}
 .gl{background:var(--glass);border-radius:999px;padding:6px 14px;font-size:15px;box-shadow:var(--sh);text-align:center}
@@ -129,6 +129,13 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
 #jumpBtn:active{transform:translateY(3px);box-shadow:0 1px 0 #e0566a}
 #chatBtn{position:absolute;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));width:44px;height:44px;border-radius:50%;font-size:21px;background:var(--glass);box-shadow:var(--sh);backdrop-filter:blur(8px);transition:transform .1s}
 #chatBtn:active{transform:scale(.88)}
+#poseBtn{position:absolute;left:62px;bottom:calc(10px + env(safe-area-inset-bottom));width:44px;height:44px;border-radius:50%;font-size:21px;background:var(--glass);box-shadow:var(--sh);backdrop-filter:blur(8px);transition:transform .1s}
+#poseBtn:active{transform:scale(.88)}#poseBtn[aria-pressed=true]{background:#e6f4ff}
+#poseMenu{position:absolute;left:10px;bottom:calc(62px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px;z-index:5;animation:pop .15s}
+#poseMenu button{padding:7px 10px;min-height:38px;border-radius:12px;background:#fff;font-size:14px;text-align:left;white-space:nowrap;touch-action:manipulation}
+#poseMenu button[aria-pressed=true]{background:#e6f4ff;box-shadow:inset 0 0 0 2px #74b9ff}
+#poseMenu button.up{grid-column:1/-1;text-align:center}
+#poseMenu kbd{font:11px/1 inherit;background:#0001;border-radius:5px;padding:2px 5px;margin-left:5px;opacity:.7}
 #chatBtn[aria-pressed=true]{background:#ffe3e8}
 #chatBtn em{position:absolute;top:4px;right:4px;width:10px;height:10px;border-radius:50%;background:var(--coral);box-shadow:0 0 0 2px #fff} /* 닫혀 있을 때 새 채팅 알림 점 */
 /* 자동 걸음 중 표시 (지도에서 고른 곳으로 걷는 동안) */
@@ -224,6 +231,9 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
   /* 아래 오른쪽: 점프 + 그 옆 💬 (던지기는 피구 때만) */
   #jumpBtn{display:block;width:62px;height:62px;right:max(14px,env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom))}
   #chatBtn{left:auto;right:calc(max(14px,env(safe-area-inset-right)) + 74px);bottom:calc(21px + env(safe-area-inset-bottom))}
+  #poseBtn{left:auto;right:calc(max(14px,env(safe-area-inset-right)) + 126px);bottom:calc(21px + env(safe-area-inset-bottom))}
+  #poseMenu{left:auto;right:calc(max(14px,env(safe-area-inset-right)) + 74px);bottom:calc(74px + env(safe-area-inset-bottom))}
+  #poseMenu kbd{display:none}
   #throwBtn{width:60px;height:60px;right:calc(max(14px,env(safe-area-inset-right)) + 128px);bottom:calc(13px + env(safe-area-inset-bottom))}
   /* 미니맵: 오른쪽 위 시간·≡ 줄 아래 작은 원 */
   #mm{top:calc(48px + env(safe-area-inset-top));bottom:auto;right:max(10px,env(safe-area-inset-right));gap:3px}
@@ -287,6 +297,8 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
   <div id="pmenu" class="panel" hidden></div>
   <button id="jumpBtn" aria-label="점프">⬆️<br>점프</button>
   <button id="chatBtn" aria-label="채팅 열기·닫기" aria-pressed="false">💬<em hidden></em></button>
+  <button id="poseBtn" aria-label="자세 바꾸기" aria-pressed="false">🧘</button>
+  <div id="poseMenu" class="panel" hidden></div>
   <div id="autoBar" class="chip" hidden>🚶 자동 걸음 중<button type="button">취소</button></div>
   <div id="mm" role="button" aria-label="지도 (누르면 크게)"><span class="chip mmpl"></span><canvas></canvas></div>
 </div>
@@ -302,10 +314,12 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
   <dt>💬 채팅</dt><dd>Enter 나 💬 버튼으로 열고, Esc 나 💬 로 닫아요 · 새 글이 오면 💬 에 점이 생겨요</dd>
   <dt>💌 귓속말</dt><dd>머리 위 이름이나 접속자 목록을 누르면 그 사람에게만 보내요 · /w 닉네임 내용</dd>
   <dt>🙂 내 상태</dt><dd>위쪽 상태 버튼(폰은 ≡ 메뉴)에서 한가해요·일하는 중 같은 상태를 골라요</dd>
+  <dt>🧘 자세</dt><dd>💬 옆 🧘 버튼이나 P 키 → 앉기·눕기·만세·손 흔들기·박수·인사 (P 를 누른 뒤 숫자 1~6, 0 은 일어나기) · 움직이거나 점프하면 풀려요</dd>
   <dt>🪑 앉기</dt><dd>벤치·의자 가까이에서 E 나 '앉기' · 움직이면 일어나요</dd>
   <dt>☕ 카페·회사</dt><dd>자리에 앉으면 커피 마시는 중·일하는 중이 돼요</dd>
   <dt>🎣 낚시</dt><dd>연못 가에서 E 로 던지고, 입질이 오면 E 로 당겨요 · 설정 → 낚시 도감</dd>
   <dt>🙏 성당·교회·사찰</dt><dd>자리 앞에서 1·2·3 으로 절·기도·촛불·범종, E 로 그만 · 새벽 5시·저녁 6시 예불·예배·미사 · 설정 → 내 기록</dd>
+  <dt>🙇 자동 절하기</dt><dd>사찰 법당 안 어디서든 '절하기'(1 키)를 누르면 가장 가까운 빈 방석으로 걸어가서 절해요 · 움직이면 취소</dd>
   <dt>🔥 불멍 캠프</dt><dd>마을 남쪽 대문 너머, 저녁 7시~아침 6시에 불이 켜져요 · 불멍 벤치에 앉아 쉬기</dd>
   <dt>🎆 불꽃놀이·스틱</dt><dd>캠프에서 E 를 누르면 하늘에 손으로 그리는 불꽃놀이, 2 는 불꽃 스틱</dd>
   <dt>🎡 놀이공원</dt><dd>마을 서쪽 대문 너머 · 기구 앞에서 E 로 타고 내려요 · 범퍼카는 WASD 로 운전, 찻잔은 W·S 로 빠르기</dd>

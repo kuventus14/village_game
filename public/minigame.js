@@ -213,9 +213,8 @@ export function createMinigames({ scene, players, getMe, send, toast, place, bub
     if (m.t === 'balloon') { addBalloon(m); return true; }
     if (m.t === 'bend') { const b = balloons.get(m.id); if (b) { scene.remove(b.g); balloons.delete(m.id); splash(m.x, m.z, b.m.team); } return true; }
     if (m.t === 'gend') {
-      const was = G && me && part(me.id);
-      const winners = m.winners.length ? `🏆 ${m.winners.join(', ')}` : '';
-      if (was || true) { res.innerHTML = `<b>${NAME[m.g]} 끝!</b><br>${m.msg}<br>${winners}<br><small>눌러서 닫기</small>`; res.hidden = false; setTimeout(() => (res.hidden = true), 9000); }
+      const winners = m.winners?.length ? `🏆 ${m.winners.join(', ')}` : '';
+      if (m.msg) { res.innerHTML = `<b>${NAME[m.g]} 끝!</b><br>${m.msg}<br>${winners}<br><small>눌러서 닫기</small>`; res.hidden = false; setTimeout(() => (res.hidden = true), 9000); }
       G = null; for (const b of balloons.values()) scene.remove(b.g); balloons.clear();
       refreshTags(); render(); return true;
     }

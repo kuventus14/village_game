@@ -67,6 +67,8 @@ export const ACTS = {
   sing: { hold: 1, at: ['stage', 'pew'], s: 'sing', name: '🎤 찬양하기' },
   piano: { hold: 1, at: ['piano'], s: 'piano', name: '🎹 피아노' },
 };
+// 바닥 자세 (자세 버튼·P 키): 서 있을 때만, 움직이거나 점프하면 풀림. 저장하지 않음 (server.js 가 pose 필드로 중계, 동작은 avatar.js)
+export const POSES = { sit: ['🧘', '앉기'], lie: ['🛌', '눕기'], cheer: ['🙌', '만세'], wave: ['👋', '손 흔들기'], clap: ['👏', '박수'], greet: ['🙇', '꾸벅 인사'] };
 export const SEAT_SPOTS = ['rosary', 'pew']; // 앉아서 하는 자리 (SEATS 의 긴 의자와 같은 좌표)
 export const ACT_STATUS = new Set(Object.values(ACTS).map((a) => a.s).filter((s) => s && s !== 'pray')); // 행동하는 동안만 쓰는 상태 (상태 메뉴엔 안 보임)
 // 공동 의식 (한국 시간 정각부터 10분)
@@ -342,6 +344,10 @@ const spot = (bld, kind, x, z, ry) => SPOTS.push({ id: SPOTS.length, bld, kind, 
   spot('temple', 'buddha', TP.cx, T.altar[3] + 0.8, PI);
   for (const s of SPOTS) { [s.x, s.z] = toWorld(s.bld, s.x, s.z); s.ry = Math.atan2(Math.sin(s.ry + XF[s.bld].th), Math.cos(s.ry + XF[s.bld].th)); s.y = floorY(s.x, s.z); }
 }
+// 사찰 '절하기' 자동 걸음: 빈 방석(cushion)을 가까운 순서로. others = 다른 사람 위치 [[x, z]…] (방석 0.35m 안에 서 있으면 쓰는 중), busy = 다른 사람이 행동 중인 자리 번호
+export const ON_CUSHION = 0.35;
+export const freeCushions = (x, z, others = [], busy = new Set()) => SPOTS.filter((s) => s.kind === 'cushion' && !busy.has(s.id) && !others.some(([ox, oz]) => Math.hypot(ox - s.x, oz - s.z) < ON_CUSHION))
+  .map((s) => [Math.hypot(s.x - x, s.z - z), s]).sort((a, b) => a[0] - b[0]).map(([, s]) => s);
 
 // ── 넓어진 땅에 더한 사람 크기 가로등·벤치·벚나무: 큰길 양옆 줄(원근으로 건물이 길 끝에 우뚝), 사찰 마당 가장자리
 const AVE_X = { cathedral: [-30, -36, -42, -48], church: [32, 40, 46] };

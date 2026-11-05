@@ -158,6 +158,12 @@ await until(() => a.get('gtag')[0]);
 assert.equal(a.get('gtag')[0].id, runC.id);
 const ge = await until(() => a.get('gend')[0]);
 assert.equal(ge.win, 'it');
+// 게임 정보는 참가자에게만: 구경꾼(c)은 모집 알림·판 상태만 받고, 시작 알림·술래 알림·결과는 못 받음
+assert.ok(b.get('gstart')[0] && b.get('gtag')[0] && b.get('gend')[0].msg && b.get('gend')[0].winners, '참가자는 시작·술래·결과를 받음');
+await until(() => c.get('gend')[0]);
+assert.equal(c.get('gstart').length + c.get('gtag').length, 0, '구경꾼에겐 시작·술래 알림이 안 감');
+assert.ok(c.get('gstate').some((m) => m.g === 'tag' && m.ph === 'ready'), '구경꾼은 판 상태(발밑 링)만 받음');
+assert.deepEqual(c.get('gend')[0], { t: 'gend', g: 'tag' }, '구경꾼에겐 결과(누가 이겼는지·이름)가 안 감');
 await wait(100);
 assert.equal(a.p().game, null);
 assert.ok(Math.hypot(a.p().x - TAG.pad.x, a.p().z - TAG.pad.z) > TAG.pad.r, '끝나면 패드 밖으로 돌려보냄');
@@ -194,6 +200,11 @@ assert.equal(hits()[1].hp, 0);
 const de = await until(() => a.get('gend').find((m) => m.g === 'dodge'));
 assert.equal(de.win, team[t0.id]);
 assert.deepEqual(de.winners, [t0.nick]);
+assert.ok(t1.get('gend').find((m) => m.g === 'dodge')?.msg, '탈락한 참가자도 결과를 받음');
+await until(() => c.get('gend').find((m) => m.g === 'dodge'));
+assert.equal(c.get('ghit').length, 0, '구경꾼에겐 맞음·탈락 알림이 안 감');
+assert.deepEqual(c.get('gend').find((m) => m.g === 'dodge'), { t: 'gend', g: 'dodge' }, '구경꾼에겐 피구 결과가 안 감');
+assert.ok(c.get('balloon').length && c.get('bend').length, '물풍선 그림(3D)은 구경꾼에게도');
 await wait(100);
 assert.ok(!inArena(DODGE, t0.p()) && !inArena(DODGE, t1.p()), '피구 끝난 사람도 경기장 밖으로');
 

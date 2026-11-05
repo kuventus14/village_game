@@ -218,7 +218,8 @@ assert.ok(st.abandoned <= st.paths * 0.03, '끼여서 포기하는 일 거의 �
   S.bots.organize('dodge');
   sim(170); await flush();
   assert.ok(S.bots.stats.played.dodge - p0 >= 2, `봇끼리 피구 한 판 (참가 ${S.bots.stats.played.dodge - p0}명)`);
-  assert.ok(msgs('gstart', 'dodge').length >= 1 && msgs('gend', 'dodge').length >= 1, '피구가 시작하고 끝남');
+  assert.ok(msgs('gstate', 'dodge').length >= 1 && msgs('gend', 'dodge').length >= 1, '피구가 시작하고 끝남 (구경꾼은 판 상태·끝남만 받음)');
+  assert.ok(!msgs('gstart', 'dodge').length && msgs('gend', 'dodge').every((m) => !m.msg && !m.winners) && !inbox.some((m) => m.t === 'ghit'), '봇끼리 한 판의 결과·맞음 알림은 구경하는 사람에게 안 감');
   assert.ok(inbox.some((m) => m.t === 'balloon'), '봇이 물풍선을 던짐');
   sim(40);
   assert.ok(live().every((p) => !p.game && !p.pad), '끝나고 40초 뒤 아무도 패드·경기장에 없음');

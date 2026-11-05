@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { STATUS, AUTO, SEATS, SIT_STATUS, PORTALS, transitMs, placeOf, resolve, spawnPoint, standPos, cleanAvatar, randomAvatar } from './public/world.js';
+import { STATUS, POSES, AUTO, SEATS, SIT_STATUS, PORTALS, transitMs, placeOf, resolve, spawnPoint, standPos, cleanAvatar, randomAvatar } from './public/world.js';
 import { guestNick, isGuestNick } from './guest.js';
 import { createStore } from './store.js';
 import { createAuth } from './auth.js';
@@ -63,7 +63,7 @@ const ok = (ws) => ws?.readyState === 1 && ws.bufferedAmount < 2e6; // 밀린 �
 const send = (ws, o) => ok(ws) && ws.send(JSON.stringify(o));
 const bcast = (o, except) => { const s = JSON.stringify(o); for (const p of players.values()) if (p.ws !== except && ok(p.ws)) p.ws.send(s); };
 const clean = (s, n) => String(s ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, n);
-const pub = (p) => ({ id: p.id, name: p.nick, a: p.a, s: p.s, pl: p.pl, x: p.x, z: p.z, ry: p.ry, seat: p.seat, fl: p.fl, vl: p.vl ? 1 : 0 });
+const pub = (p) => ({ id: p.id, name: p.nick, a: p.a, s: p.s, pl: p.pl, x: p.x, z: p.z, ry: p.ry, seat: p.seat, fl: p.fl, vl: p.vl ? 1 : 0, pose: p.pose || '' });
 const byUid = (uid) => [...players.values()].find((p) => p.uid === uid); // 같은 계정(로그인 아이디) 접속 찾기
 const byNick = (nick) => { const k = String(nick).toLowerCase(); return [...players.values()].find((p) => p.nick.toLowerCase() === k); };
 
@@ -97,6 +97,8 @@ export function setPlace(p, pl) {
   if (AUTO[pl] && p.s === 'free') { p.s = AUTO[pl]; p.auto = true; }
   return true;
 }
+// 바닥 자세 풀기 (움직이거나 다른 걸 하면): 모두에게 알림
+const unpose = (p) => { p.pose = ''; bcast({ t: 'pose', id: p.id, p: '' }); };
 const sendInfo = (p) => bcast({ t: 'info', id: p.id, s: p.s, pl: p.pl, seat: p.seat, x: p.x, z: p.z, ry: p.ry, fl: p.fl });
 // 연못 낚시 (규칙은 fishing.js). FISH_BITE=최소,최대(ms) 는 시험용으로 입질을 빨리 오게 함
 const fishing = createFishing({ now: Date.now, rand: Math.random, send: (p, o) => send(p.ws, o), bcast, info: sendInfo, save: (p) => p.uid && auth.saveFish(p.uid, p.dex).catch(console.error), opts: process.env.FISH_BITE ? { bite: process.env.FISH_BITE.split(',').map(Number) } : {} });
@@ -191,6 +193,7 @@ export function drop(me) {
 export function onMsg(me, m) {
   if (me.fish && (['sit', 'go', 'throw'].includes(m.t) || (m.t === 'm' && (Math.hypot(m.x - me.x, m.z - me.z) > 0.05 || m.y > 0)))) fishing.stop(me); // 낚시 중 움직이거나 다른 걸 하면 취소
   if (me.act && (['sit', 'stand', 'go', 'throw', 'fish'].includes(m.t) || (m.t === 'm' && (Math.hypot(m.x - me.x, m.z - me.z) > 0.05 || m.y > 0)))) rituals.stop(me); // 행동 중 움직이거나 다른 걸 하면 취소
+  if (me.pose && (['sit', 'go', 'throw', 'fish', 'act', 'ride', 'fw'].includes(m.t) || (m.t === 'm' && (Math.hypot(m.x - me.x, m.z - me.z) > 0.05 || m.y > 0)))) unpose(me); // 자세 중 움직이거나 점프·다른 걸 하면 풀림
   if (me.fw && (['sit', 'stand', 'go', 'throw', 'fish', 'act'].includes(m.t) || (m.t === 'm' && (Math.hypot(m.x - me.x, m.z - me.z) > 0.05 || m.y > 0)))) fireworks.stop(me); // 불꽃놀이 중 움직이면 취소
   if (m.t === 'm') {
     if (me.seat >= 0 || me.transit || games.frozen(me) || rides.frozen(me)) return; // 앉아 있거나 층 이동·게임 준비·놀이기구 타는 중엔 위치 고정
@@ -245,6 +248,14 @@ export function onMsg(me, m) {
   else if (m.t === 'note') rituals.note(me, m);
   else if (m.t === 'fw') fireworks.act(me, m);
   else if (m.t === 'ride') rides.act(me, m); // 놀이기구 타기·내리기·조작 (rides.js)
+  else if (m.t === 'pose') { // 바닥 자세: 서 있을 때만 (의자·게임·놀이터 패드·층 이동·낚시·행동·불꽃·기구 중엔 거절), 바꾸기는 0.25초에 한 번
+    const k = m.p === '' ? '' : Object.hasOwn(POSES, m.p) ? m.p : null, now = Date.now();
+    if (k === null || k === (me.pose || '')) return;
+    if (!k) return unpose(me);
+    if (me.seat >= 0 || me.game || me.pad || me.transit || me.fish || me.act || me.fw || rides.frozen(me)) return send(me.ws, { t: 'posefail' });
+    if (now - (me.poseAt || 0) < 250) return;
+    me.pose = k; me.poseAt = now; bcast({ t: 'pose', id: me.id, p: k });
+  }
   else if (m.t === 'emote' && ['👋', '😄', '❤️', '👍'].includes(m.e)) {
     bcast({ t: 'emote', id: me.id, e: m.e });
   }
