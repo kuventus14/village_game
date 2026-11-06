@@ -99,6 +99,7 @@ function bake(paths) {
   if (W.PARK) { // 포근 놀이공원: 둘레 숲 → 부지 잔디 → 구역 → 길·광장·대로 → 기구 자리 → 꼬마기차 선로 → 정문
     const P = W.PARK, Z = W.ZOO_ZONE, RZ = W.RIDES_ZONE, E = W.ENTRY_PLAZA, M = W.PROMENADE;
     line(W.PARK_ROAD.pts, 26, '#7fb878'); line(W.PARK_ROAD.pts, 9, '#e2c296');
+    if (W.LAKE) { for (let i = 0; i < W.PARK_ROAD.pts.length; i += 2) { const [x, z] = W.PARK_ROAD.pts[i], e = (W.lakeEdge(W.PARK_ROAD.s[i], -1) + W.lakeEdge(W.PARK_ROAD.s[i], 1)) / 2; if (e > 1) disc(x, z, e, '#8fd0f0'); } line(W.PARK_ROAD.pts.filter((_, i) => W.PARK_ROAD.s[i] >= W.BRIDGE.s0 && W.PARK_ROAD.s[i] <= W.BRIDGE.s1), 9, '#fff0e0'); } // 호수 + 다리
     rect([P.x0 - 14, P.z0 - 14, P.x1 + 14, P.z1 + 14], '#7fb878'); rect([P.x0, P.z0, P.x1, P.z1], '#cfeab8', '#b08a64');
     rect([Z.x0, Z.z0, Z.x1, Z.z1], '#d9eec0'); rect([RZ.x0, RZ.z0, RZ.x1, RZ.z1], '#e3f0c6');
     for (const p of W.ZOO_PENS ?? []) rect([p.x0, p.z0, p.x1, p.z1], '#c4e3a3', '#8fb873');

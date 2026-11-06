@@ -1,7 +1,7 @@
 // 서버와 브라우저가 같이 쓰는 마을 설계도: 건물·가구·충돌·구역·상태 목록
 import { CAMP_TOWN_PATH, FIRE, CLEAR_R, CAMP_SEATS, CAMP_CIRCLES, inClearing, campNear, campDist, campWalk } from './campdata.js';
 export * from './campdata.js'; // 불멍 캠프 (아래 '불멍 캠프' 묶음 두 곳)
-import { PARK, PARK_TOWN_PATH, PARK_RECTS, PARK_CIRCLES, PARK_BENCHES, inPark, inZoo, parkRoadNear, parkDist, parkWalk } from './parkdata.js';
+import { PARK, PARK_TOWN_PATH, PARK_RECTS, PARK_CIRCLES, PARK_BENCHES, inPark, inZoo, parkRoadNear, parkDist, parkWalk, bridgeH, lakeEdge, GATE_WALL } from './parkdata.js';
 import { ZOO_RECTS, ZOO_CIRCLES } from './zoodata.js';
 import { RIDE_RECTS, RIDE_CIRCLES, RIDE_STATUS } from './ridesdata.js';
 export * from './parkdata.js'; export * from './zoodata.js'; export * from './ridesdata.js'; // 포근 놀이공원·동물원·놀이기구 (아래 '포근 놀이공원' 묶음 두 곳, 약속은 docs/PARK.md)
@@ -305,6 +305,7 @@ const brd = TRAIL.bridge, WFLOORS = [[brd.x - 3.4, brd.z - 3, brd.x + 3.4, brd.z
 const flo = (list, x, z) => { let y = 0; for (const [x0, z0, x1, z1, h0, h1, ax] of list) if (x >= x0 && x <= x1 && z >= z0 && z <= z1) y = Math.max(y, ax ? h0 + (h1 - h0) * (ax === 'x' ? (x - x0) / (x1 - x0) : (z - z0) / (z1 - z0)) : h0); return y; };
 export function floorY(x, z) {
   let y = flo(WFLOORS, x, z);
+  if (x < -BX - 1.5) { const r = parkRoadNear(x, z); if (r.d <= r.hw + 0.5) y = Math.max(y, bridgeH(r.s)); } // 호수 위 아치 다리 (마을 대문~정문 길)
   for (const k in XF) if (nearRect(x, z, SACRED_BOXES[k], 0)) { const [dx, dz] = toDesign(k, x, z); y = Math.max(y, flo(DFLOORS[k], dx, dz) * XF[k].s); }
   return y;
 }
@@ -465,7 +466,8 @@ export const FLOWERS = Array.from({ length: 260 }, () => {
       const e = [t.x - PARK.x0 + 6, PARK.x1 + 6 - t.x, t.z - PARK.z0 + 6, PARK.z1 + 6 - t.z], m = Math.min(...e);
       if (m === e[0]) t.x = PARK.x0 - 6; else if (m === e[1]) t.x = PARK.x1 + 6; else if (m === e[2]) t.z = PARK.z0 - 6; else t.z = PARK.z1 + 6;
     }
-    const r = parkRoadNear(t.x, t.z); if (r.d < r.hw + 6) nudge(t, r.hw + 6, r.px, r.pz); // 길가 → 길에서 6m 밖
+    const r = parkRoadNear(t.x, t.z), side = r.tx * (t.z - r.pz) - r.tz * (t.x - r.px) >= 0 ? 1 : -1, keep = Math.max(r.hw + 6, lakeEdge(r.s, side) + 5); // 호수 있는 곳은 호수 가장자리에서 5m 밖
+    if (r.d < keep) nudge(t, keep, r.px, r.pz); // 길가 → 길에서 6m 밖
   }
 }
 function segD(x, z, [ax, az], [bx, bz]) { const ex = bx - ax, ez = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez))); return Math.hypot(x - ax - ex * t, z - az - ez * t); }
@@ -562,7 +564,7 @@ export function resolve(x, z, r = 0.4, fl = 0) {
   return walkable(x, z);
 }
 // ── 포근 놀이공원 충돌: 공원(parkdata)·동물원(zoodata)·놀이기구(ridesdata) 목록을 그대로 가리킴 → 뒤에 채워져도(push) 바로 반영
-const PARK_COLLIDE = [[PARK_RECTS, PARK_CIRCLES], [ZOO_RECTS, ZOO_CIRCLES], [RIDE_RECTS, RIDE_CIRCLES]];
+const PARK_COLLIDE = [[PARK_RECTS, PARK_CIRCLES], [ZOO_RECTS, ZOO_CIRCLES], [RIDE_RECTS, RIDE_CIRCLES], [GATE_WALL, []]]; // 마지막은 닫힌 정문 게이트(닫힐 때만 벽)
 function resolvePark(x, z, r) {
   for (let i = 0; i < 3; i++) for (const [rects, circles] of PARK_COLLIDE) [x, z] = pushOut(x, z, r, rects, circles);
   return walkable(x, z);

@@ -382,7 +382,7 @@ export function createBgm({ menu, lite = false } = {}) {
   }
   function apply(st) {
     const m = bgmMix(st), now = ac.currentTime, on = S.on && S.vol > 0;
-    bus.gain.setTargetAtTime(on ? S.vol * BGM_MAX * m.master : 0, now, FADE_TAU);
+    bus.gain.setTargetAtTime(on ? S.vol * BGM_MAX * m.master * (1 - (st.duck || 0)) : 0, now, FADE_TAU); // duck: 불꽃놀이 음악이 들릴 땐 마을 배경음악을 줄임
     lp.frequency.setTargetAtTime(m.lp, now, 0.6);
     for (const k of SONG_NAMES) {
       const g = on && m.master > 0 ? m.gain[k] : 0;

@@ -8,7 +8,7 @@
 import { RIDES, inPark, resolve } from './public/world.js';
 
 export const GAP = 600; // 연타 방지 (ms)
-/* ctx: { now(), rand(), players (Map), send(p, o), bcast(o), info(p), stand(p) } */
+/* ctx: { now(), rand(), players (Map), send(p, o), bcast(o), info(p), stand(p), closed?() = 불꽃놀이 영업 중단 중 } */
 export function createRidesServer(ctx) {
   const riders = new Map(), taken = new Map(); // 사람 → { id, seat, at, …회차 기록 }, '기구:자리' → 사람
   const sims = {}; for (const R of Object.values(RIDES)) if (R.init) sims[R.id] = R.init(); // 조작 기구의 상태 (범퍼카 차 10대·찻잔 8개, 크기 고정 → 오래 켜 둬도 안 늘어남)
@@ -18,6 +18,7 @@ export function createRidesServer(ctx) {
   function on(p, m, now) {
     const R = typeof m.id === 'string' && Object.hasOwn(RIDES, m.id) && RIDES[m.id];
     if (!R) return no(p, '아직 준비 중인 기구예요');
+    if (ctx.closed?.()) return no(p, '불꽃놀이 시간에는 놀이공원이 영업을 임시 중단해요');
     if (p.ride) return no(p, '이미 타고 있어요');
     if (!inPark(p.x, p.z) || p.fl) return no(p, '놀이공원 안에서 탈 수 있어요');
     if (p.game || p.transit || p.fish || p.act || p.fw) return no(p, '지금은 탈 수 없어요');
@@ -89,6 +90,7 @@ export function createRidesServer(ctx) {
       }
     },
     snapshot() { return { now: ctx.now(), riders: [...riders].map(([p, r]) => [p.id, r.id, r.seat]), sim: Object.fromEntries(Object.entries(sims).map(([id, s]) => [id, RIDES[id].snap(s)])) }; },
+    evict(p, why = 'close') { if (riders.has(p)) off(p, why, ctx.now()); }, // 영업 중단: 타고 있던 사람을 내린 자리로 (회차 끝을 못 기다리는 경우)
     leave(p) { const r = riders.get(p); if (!r) return; riders.delete(p); taken.delete(key(r.id, r.seat)); p.ride = null; }, // 연결 끊김: 자리만 비움 (사람은 'leave' 로 사라짐)
     frozen: (p) => !!p.ride,
     riders: () => riders, sims, // 시험·봇 확인용

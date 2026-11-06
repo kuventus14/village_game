@@ -1,10 +1,11 @@
 // 바깥 풍경 공용 도우미: 시간 유니폼, 부드러운 재질, 셰이더 덧대기, 지오메트리 합치기, 난수·노이즈, 땅 높이
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { trailNear, streamDist, TEMPLE_YARD, BX, BZ, campDist, parkDist } from './world.js';
+import { trailNear, streamDist, TEMPLE_YARD, BX, BZ, campDist, parkDist, lakeDepth } from './world.js';
 
 // 셰이더들이 같이 쓰는 값: 시간, 밤 정도(0~1), 물에 비치는 하늘색, 해(밤엔 달) 빛 방향 — atmosphere 가 매 프레임 채움
-export const U = { time: { value: 0 }, night: { value: 0 }, sky: { value: new THREE.Color('#eaf6fb') }, light: { value: new THREE.Vector3(0.62, 0.58, 0.5).normalize() } };
+export const U = { time: { value: 0 }, night: { value: 0 }, flash: { value: new THREE.Color(0, 0, 0) }, // flash: 불꽃놀이 번쩍임 색(호수가 그 색으로 반짝)
+  sky: { value: new THREE.Color('#eaf6fb') }, light: { value: new THREE.Vector3(0.62, 0.58, 0.5).normalize() } };
 
 // 밤에 세기가 바뀌는 재질 목록: 낮 세기 day → 밤 세기 night (밤 정도가 on 근처를 지날 때 바뀜). 발광 재질은 emissiveIntensity, 나머지는 색에 곱함
 export const GLOWS = [];
@@ -36,8 +37,9 @@ export function groundH(x, z) {
   if (d < BZ + 3) return 0;
   const Y = TEMPLE_YARD, yd = Math.hypot(Math.max(0, Math.abs(x - Y.cx) - Y.w / 2), Math.max(0, Math.abs(z - Y.cz) - Y.d / 2));
   const flat = Math.min(smooth(25, 60, trailNear(x, z).d), smooth(25, 60, yd), smooth(14, 32, streamDist(x, z)), smooth(25, 60, campDist(x, z)), smooth(25, 60, parkDist(x, z))); // 불멍 캠프 길·공터, 놀이공원 길·부지도 평평
-  if (flat <= 0) return 0;
-  return flat * (smooth(BZ + 3, BZ + 36, d) * (0.8 + fbm(x * 0.03, z * 0.03) * 5) + smooth(90, 260, Math.min(r, d + 46)) * fbm(x * 0.008 + 3, z * 0.008) * 34);
+  const ld = x < -BX ? lakeDepth(x, z) : 0; // 놀이공원 가는 길 호수 바닥 (땅을 파냄)
+  if (flat <= 0) return -ld;
+  return flat * (smooth(BZ + 3, BZ + 36, d) * (0.8 + fbm(x * 0.03, z * 0.03) * 5) + smooth(90, 260, Math.min(r, d + 46)) * fbm(x * 0.008 + 3, z * 0.008) * 34) - ld;
 }
 
 // 부드러운 만화 조명: 그림자 쪽도 너무 어둡지 않게 감싸는 4단 램프(선형 보간)

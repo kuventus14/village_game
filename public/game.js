@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { ACT_STATUS, POSES, BUILDINGS, OUTFITS, STATUS, PLACE, SEATS, SIT_STATUS, SIT_TEXT, standPos, randomAvatar, FLOOR_H, PORTALS, transitAt, inside, placeOf, resolve, floorY, FACADES } from './world.js';
+import { ACT_STATUS, POSES, BUILDINGS, OUTFITS, STATUS, PLACE, SEATS, SIT_STATUS, SIT_TEXT, standPos, randomAvatar, FLOOR_H, PORTALS, transitAt, inside, placeOf, resolve, floorY, FACADES, inPark, setGateClosed, gateClosed } from './world.js';
+import { SHOW_TEXT, SHOW_LEN } from './showdata.js';
+import { createParkShow } from './parkshow.js';
+import { createShowAudio } from './showaudio.js';
+import { audio } from './audio.js';
+import { sfx as sfxCtl } from './sfx.js';
 import { buildAvatar, disposeAvatar, animate, createCrowd } from './avatar.js';
 import { api, wsUrl } from './api.js';
 import { createEditor } from './editor.js';
@@ -22,6 +27,7 @@ import { createFishing } from './fishing.js';
 import { createRituals } from './rituals.js';
 import { createCamp } from './camp.js';
 import { createParkSite } from './park-site.js';
+import { createBridge } from './bridge.js';
 import { createZoo } from './zoo.js';
 import { createRides } from './rides.js';
 import { createBgm } from './bgm.js';
@@ -75,7 +81,7 @@ function buildVillage() {
   Object.assign(casino, createCasino(scene, buildAvatar)); // 카지노 3층 (casino.js)
   Object.assign(interiors, createSacred(scene, Q)); // 성당·교회·사찰 (sacred.js)
   createTrail(scene, Q); // 사찰 가는 숲길 (trail.js)
-  outdoors.park = createParkSite(scene, Q); outdoors.zoo = createZoo(scene, Q); // 포근 놀이공원 땅·정문·광장·대로 (park-site.js) + 동물원 (zoo.js), 약속은 docs/PARK.md
+  outdoors.park = createParkSite(scene, Q); outdoors.bridge = createBridge(scene, Q); outdoors.zoo = createZoo(scene, Q); // 포근 놀이공원 땅·정문·광장·대로 (park-site.js) + 동물원 (zoo.js), 약속은 docs/PARK.md
   for (const key of Object.keys(BUILDINGS)) { // 건물 이름표(사람 수)
     BLD[key] = { label: document.createElement('div') };
     BLD[key].label.className = 'bld';
@@ -286,6 +292,7 @@ function handle(m) {
     if (prev) { disposeAvatar(prev); prev = null; }
     $('#join').hidden = true; $('#hud').hidden = false;
     camera.clearViewOffset(); joinSide = null;
+    applyShow(m.show, true); // 불꽃놀이 시간이면 안내·정문 게이트 상태를 맞춤
     $('#log').replaceChildren(); m.log.forEach(logLine);
     $('#kick').hidden = true; m.state?.forEach((x) => MG.handle(x));
     renderMeta();
@@ -295,6 +302,8 @@ function handle(m) {
   else if (m.t === 'fl') { const p = players.get(m.id); if (p) p.transit = { pt: PORTALS[m.p], to: m.to, t0: performance.now(), dur: m.dur }; }
   else if (m.t === 'auth') { store.del('village.token'); showAuth('로그인이 필요해요'); }
   else if (m.t === 'kicked') { kicked = true; $('#kick').hidden = false; }
+  else if (m.t === 'show') applyShow(m);
+  else if (m.t === 'evac') { if (me && inPark(me.x, me.z) && !me.fl) { toast('🎆 불꽃놀이가 곧 시작돼요 · 정문 밖 다리 위로 나가요'); autoWalk(m.x, m.z); } } // 영업 임시 중단: 놀이공원 안이면 정문 밖으로 자동 걸음
   else if (m.t === 'tp') { Object.assign(me, { x: m.x, z: m.z, tr: m.ry, ry: m.ry, jy: 0, vy: 0 }); stopAuto(); } // 서버가 옮김(게임·기구 등) → 자동 걸음 끝
   else if (m.t === 'dm') {
     const other = m.from === me.name ? m.to : m.from, line = { me: m.from === me.name, from: m.from, text: m.text };
@@ -471,6 +480,9 @@ const RIDE = createRides({ scene, camera, Q, players, getMe: () => me, send, toa
 const CMP = createCamp({ scene, camera, renderer, Q, players, getMe: () => me, send, toast, bubble, host: $('#hud'), free: () => !MG.active() && !me.transit && !FISH.busy() && !RIT.acting(), sitq: $('#sitq'), standUp: () => { if (me?.sit >= 0) standUp(); } });
 // 배경음악 (bgm.js): 낮·밤·놀이공원·숲길 곡을 구역에 따라 섞음. 설정 '🔊 소리'에 '배경음악' 줄 (효과음 줄 다음)
 const BGM = createBgm({ menu: $('#setMenu'), lite: Q.lite });
+// 불꽃놀이(3D) + 소리: 쇼 시계 = (지금 − 서버가 알려 준 쇼 시작 시각). 터짐마다 소리 (parkshow.js·showaudio.js, 대본은 showscript.js)
+const SHOWA = createShowAudio({ audio, bgm: BGM, sfx: sfxCtl });
+const PSHOW = createParkShow({ scene, camera, renderer, Q, hooks: { onLaunch: (e) => SHOWA.launch(e), onBurst: (e, x, y, z) => SHOWA.burst(e, x, y, z), onEm: (e) => SHOWA.em(e) } });
 // 효과음 2단계 (fx.js: 마을·기구·동물원·게임·낚시·카지노 소리, footsteps.js: 발소리) · 반딧불이 (fireflies.js: 숲길·사찰 마당·불멍 공터, 밤에만)
 const FX = createFx({ players, getMe: () => me }), STEPS = createFootsteps({ players, getMe: () => me }), FF = createFireflies(scene, Q);
 toastSound = () => FX.ui('toast');
@@ -636,10 +648,35 @@ function pathWorker() {
   pfw.onerror = () => { pfw = null; stopAuto('자동 걸음을 쓸 수 없어요'); };
   return pfw;
 }
+/* ───── 불꽃놀이 시간: 안내 띠(단계 문구 + 남은 시간) · 정문 게이트 문 · 클라이언트 쪽 문 벽 (서버가 단계가 바뀔 때마다 알림, 규칙은 show.js) ───── */
+const show = { ph: 'open', startAt: 0, bannerUntil: 0 };
+let showT = null; // 영상 찍기용: 쇼 시계를 직접 정함 (window.__village.setShowT)
+// 쇼 시계(초): 쇼·마무리 단계에서만 (게이트 닫힘~쇼 끝). 쇼 시작 전(closed)에는 -60 부터 음수로 흐름
+const showClockT = () => (showT != null ? showT : show.ph === 'show' || show.ph === 'after' || show.ph === 'closed' ? (Date.now() - show.startAt) / 1000 : null);
+const mmss = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+function paintShow() {
+  const el = $('#showBar'); if (!el) return;
+  const ph = show.ph, now = Date.now(), left = show.startAt - now;
+  if (ph === 'open' && now > show.bannerUntil) return void (el.hidden = true);
+  const [a, b] = SHOW_TEXT[ph] || SHOW_TEXT.open;
+  let c = '';
+  if (ph === 'warn' || ph === 'evac' || ph === 'closed') c = `쇼 시작까지 ${mmss(left)}`;
+  else if (ph === 'show') c = `🎆 감상 중 · ${mmss(show.startAt + SHOW_LEN - now)}`;
+  el.innerHTML = `<b>${a}</b>${b ? `<small>${b}</small>` : ''}${c ? `<em>${c}</em>` : ''}`; el.hidden = false;
+}
+function applyShow(s, first = false) {
+  if (!s) return;
+  show.ph = s.ph; show.startAt = s.until == null ? 0 : Date.now() + s.until;
+  setGateClosed(!!s.gate); outdoors?.park?.setGate(!!s.gate, first); // 처음 들어올 때는 이미 그 모양으로
+  if (!first) show.bannerUntil = Date.now() + 8000; // 영업 재개 안내는 8초 보임
+  paintShow();
+}
+setInterval(paintShow, 500);
 function autoWalk(x, z, again, done) { // done: 도착하면 부를 일 (있으면 0.25m 까지 바짝 다가감, '도착했어요' 알림 없음)
   if (!me) return;
   if (MG.active() || RIDE.busy() || me.transit || RIT.acting() || CMP.drawing()) return toast('지금은 자동 걸음을 쓸 수 없어요');
   if (me.fl) return toast('위층에서는 자동 걸음이 안 돼요 · 1층에서 써 주세요'); // 지도는 1층 땅만 보여 줌
+  if (show.ph !== 'open' && inPark(x, z) && !inPark(me.x, me.z)) return toast('불꽃놀이 시간에는 놀이공원이 영업을 임시 중단해요'); // 안으로 들어가는 길 찾기 거절
   const w = pathWorker();
   if (!w) return toast('자동 걸음을 쓸 수 없어요');
   if (me.sit >= 0) standUp();
@@ -746,8 +783,9 @@ function facadeLift(x, z) {
 }
 const clock = new THREE.Clock();
 let T = 0;
-renderer.setAnimationLoop(() => {
-  const t0 = performance.now(), raw = clock.getDelta(), dt = Math.min(raw, 0.05);
+let camHook = null, capturing = false; // 영상 찍기: 프레임을 정해진 간격으로 하나씩 돌리고(stepFrame) 그리기 직전에 카메라를 직접 정함(camHook)
+const frameFn = (fixedDt) => {
+  const t0 = performance.now(), raw = fixedDt ?? clock.getDelta(), dt = Math.min(raw, 0.05);
   T += dt;
   const k = 1 - Math.exp(-dt * 12);
   let inKey = null; // 내가 들어와 있는 건물
@@ -842,18 +880,22 @@ renderer.setAnimationLoop(() => {
   RIT.update(dt);
   CMP.update(dt);
   FF.update(dt, camera, renderer, atmo.state.night);
-  BGM.update(dt, { night: atmo.state.night, x: me?.x, z: me?.z, pl: me?.pl, inKey, glow: FF.glow });
+  const tShow = showClockT(); // 쇼 중(또는 쇼 직후)이면 쇼 시계(초), 아니면 null
+  PSHOW.update(dt, { t: tShow, night: atmo.state.night }); SHOWA.tick(tShow, me?.x ?? 0, me?.z ?? 0);
+  BGM.update(dt, { night: atmo.state.night, x: me?.x, z: me?.z, pl: me?.pl, inKey, glow: FF.glow, duck: SHOWA.duck });
   FX.update(dt, { camera, night: atmo.state.night, inKey }); STEPS.update(dt);
-  outdoors.park.update(dt, camera); outdoors.zoo.update(dt, camera);
+  outdoors.park.update(dt, camera); outdoors.bridge.update(dt, camera); outdoors.zoo.update(dt, camera);
   if (phase === 'play') MAP.draw(now); // 15번/초만 다시 그림
   U.time.value = T;
   atmo.update(dt, camera, inKey);
   outdoors.water.update(dt, T);
   outdoors.life.setNight(atmo.state.night, inKey);
   renderer.info.reset();
+  camHook?.(dt);
   post.render(dt);
   perfTick(raw, t0);
-});
+};
+renderer.setAnimationLoop(() => { if (!capturing) frameFn(); });
 // 성능 기록(디버그): 1초마다 평균 프레임 간격·CPU 시간·그리기 호출·삼각형
 const perf = { fps: 0, ms: 0, cpu: 0, calls: 0, tris: 0, n: 0, acc: 0, cpuAcc: 0 };
 function perfTick(raw, t0) {
@@ -861,4 +903,4 @@ function perfTick(raw, t0) {
   if (perf.acc < 1) return;
   Object.assign(perf, { fps: +(perf.n / perf.acc).toFixed(1), ms: +((perf.acc / perf.n) * 1000).toFixed(1), cpu: +(perf.cpuAcc / perf.n).toFixed(2), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, n: 0, acc: 0, cpuAcc: 0 });
 }
-window.__village = { players, get me() { return me; }, get auto() { return auto; }, autoWalk, map: MAP, bgm: BGM, fx: FX, fireflies: FF, camera, scene, renderer, post, quality: Q, perf, atmo, makeClock, cam: (y, p = pitch, d = dist) => { yaw = y; pitch = p; dist = d; tween = null; } }; // 시험·디버깅용 (cam = 시점 돌리기)
+window.__village = { stepFrame: (dt) => { capturing = true; frameFn(dt); }, setCamHook: (f) => { camHook = f; }, setShowT: (t) => { showT = t; }, applyShow, PSHOW, SHOWA, players, get me() { return me; }, get auto() { return auto; }, autoWalk, map: MAP, bgm: BGM, fx: FX, fireflies: FF, camera, scene, renderer, post, quality: Q, perf, atmo, makeClock, cam: (y, p = pitch, d = dist) => { yaw = y; pitch = p; dist = d; tween = null; } }; // 시험·디버깅용 (cam = 시점 돌리기)

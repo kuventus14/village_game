@@ -198,6 +198,7 @@ export function createBots(ctx) {
       let v = (row[k] ?? 0.15) * b.pers.like[k]; // 시간표에 0 이면 그 시간엔 안 감 (동물원 밤)
       if (k === 'office' && !wk) v *= 0.12;
       if (k === 'camp' && !(ctx.campOpen() && (h < 5.6 || h >= 19))) v = 0; // 닫혔거나 곧 닫힘
+      if ((k === 'fun' || k === 'zoo') && ctx.parkOpen && !ctx.parkOpen()) v = 0; // 불꽃놀이 시간엔 놀이공원이 영업 임시 중단
       if (rit.has(k)) v = (v + 2) * (b.pers.faith === k ? 6 : 1.5);
       if (b.pers.faith === k) v *= 1.6;
       if (CAP[k] && (cnt[k] || 0) >= CAP[k] * (target / 80 || 1)) v = 0;
@@ -595,6 +596,23 @@ export function createBots(ctx) {
   return {
     tick, stats, list: () => [...bots], grid, organize: (gid, invite) => organize(ctx.now(), { gid, invite }),
     reserved: (nick) => reservedSet.has(String(nick).toLowerCase()),
+    // 불꽃놀이 영업 중단: 놀이공원 안 봇은 하던 일을 접고 정문 밖으로 걸어 나감 (타고 있는 봇은 회차가 끝나면 나옴) / 문이 닫힐 때 옮겨진 봇은 하던 일을 비움
+    evac(pt) {
+      for (const b of bots) {
+        const p = b.p; if (!inPark(p.x, p.z) || p.ride || b.leaving) continue;
+        if (p.seat >= 0) send(b, { t: 'stand' });
+        const [x, z] = pt(); b.q = [go(x, z, 1.5, { run: rnd() < 0.5 }), idle(R(5, 30))]; b.cur = null; b.path = null; b.claim = -1; b.spot = -1; b.kind = null;
+      }
+    },
+    // 불꽃놀이 구경: 마을·길에 있던 봇 중 일부(frac)가 다리 가운데 광장으로 걸어가 서서 구경 (pt() = 다리 위 자리)
+    gather(pt, frac = 0.55) {
+      for (const b of bots) {
+        const p = b.p; if (b.leaving || p.ride || p.fl || !['town', 'park'].includes(p.pl) || rnd() > frac) continue;
+        if (p.seat >= 0) send(b, { t: 'stand' });
+        const [x, z] = pt(); b.q = [go(x, z, 1.5, { run: rnd() < 0.4 }), idle(Number(process.env.SHOW_HOLD_S) || R(420, 620), 0.2)]; b.cur = null; b.path = null; b.claim = -1; b.spot = -1; b.kind = null;
+      }
+    },
+    reset(p) { const b = [...bots].find((o) => o.p === p); if (b) { b.q = []; b.cur = null; b.path = null; b.claim = -1; b.spot = -1; b.kind = null; } },
     async start(n, { timer: useTimer = true } = {}) { // 닉네임 풀에서 이미 가입한 사람 이름은 빼고 예약 → n명 넣기
       const ok = [];
       for (const nick of NICKS) if (!(await ctx.nickTaken(nick))) ok.push(nick);

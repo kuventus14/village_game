@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { STATUS, POSES, AUTO, SEATS, SIT_STATUS, PORTALS, transitMs, placeOf, resolve, spawnPoint, standPos, cleanAvatar, randomAvatar } from './public/world.js';
+import { STATUS, POSES, AUTO, SEATS, SIT_STATUS, PORTALS, transitMs, placeOf, resolve, spawnPoint, standPos, cleanAvatar, randomAvatar, crossesGate } from './public/world.js';
 import { guestNick, isGuestNick } from './guest.js';
 import { createStore } from './store.js';
 import { createAuth } from './auth.js';
@@ -14,6 +14,7 @@ import { createRituals } from './rituals.js';
 import { kstHours } from './public/daycycle.js';
 import { createCamp, atOffset, CLOSED_MSG } from './camp.js';
 import { createFireworks } from './fireworks.js';
+import { createShow } from './show.js';
 import { createBots } from './bots.js';
 import { createRidesServer } from './rides.js';
 
@@ -117,7 +118,10 @@ const rituals = createRituals({ now: () => Date.now() + ritOff, send: (p, o) => 
 const campOff = process.env.CAMP_AT ? atOffset(process.env.CAMP_AT) : 0, campNow = () => Date.now() + campOff;
 const camp = createCamp({ now: campNow, bcast, players, stand: (p) => stand(p) });
 // 포근 놀이공원 놀이기구 (규칙은 rides.js, 약속은 docs/PARK.md): 메시지 { t: 'ride' } → act, 타는 중엔 걷기 무시(frozen)
-const rides = createRidesServer({ now: Date.now, rand: Math.random, players, send: (p, o) => send(p.ws, o), bcast, info: sendInfo, stand: (p) => stand(p) });
+const rides = createRidesServer({ now: Date.now, rand: Math.random, players, send: (p, o) => send(p.ws, o), bcast, info: sendInfo, stand: (p) => stand(p), closed: () => show.closed() });
+// 불꽃놀이 시간 운영 (규칙은 show.js, 시간표는 public/showdata.js): 매일 19:00·22:00 쇼 — 앞뒤로 놀이공원 영업 임시 중단·정문 게이트 닫힘. SHOW_AT=HH:MM[:SS] 는 시험·시연용 시계
+const showOff = process.env.SHOW_AT ? atOffset(process.env.SHOW_AT) : 0, showNow = () => Date.now() + showOff;
+const show = createShow({ now: showNow, rand: Math.random, players, send: (p, o) => send(p.ws, o), bcast, stand: (p) => stand(p), rides, info: sendInfo, bots: { evac: (f) => bots.evac(f), gather: (f) => bots.gather(f), reset: (p) => bots.reset(p) } });
 const fireworks = createFireworks({ now: campNow, rand: Math.random, players, send: (p, o) => send(p.ws, o), open: camp.open });
 
 // 일어나기: 앉기 전 상태로 되돌리고 의자 앞/뒤에 세움
@@ -180,7 +184,7 @@ wss.on('connection', (ws) => {
 // 접속자(사람·봇) 넣기: 사람에겐 welcome, 모두에게 join. 봇은 ws 가 없음
 export function addPlayer(p, extra = {}) {
   p.id = nextId++;
-  send(p.ws, { t: 'welcome', id: p.id, players: [...players.values()].map(pub).concat(pub(p)), log: chatLog, state: games.snapshot(), ...extra, fish: p.dex, fishers: fishing.snapshot(), sacred: p.rec, rit: rituals.snapshot(), camp: { ...camp.snapshot(), fw: fireworks.snapshot() }, rides: rides.snapshot() });
+  send(p.ws, { t: 'welcome', id: p.id, players: [...players.values()].map(pub).concat(pub(p)), log: chatLog, state: games.snapshot(), ...extra, fish: p.dex, fishers: fishing.snapshot(), sacred: p.rec, rit: rituals.snapshot(), camp: { ...camp.snapshot(), fw: fireworks.snapshot() }, rides: rides.snapshot(), show: show.snapshot() });
   players.set(p.id, p);
   bcast({ t: 'join', p: pub(p) }, p.ws ?? undefined);
 }
@@ -203,6 +207,7 @@ export function onMsg(me, m) {
   if (m.t === 'm') {
     if (me.seat >= 0 || me.transit || games.frozen(me) || rides.frozen(me)) return; // 앉아 있거나 층 이동·게임 준비·놀이기구 타는 중엔 위치 고정
     if (![m.x, m.z, m.ry].every(Number.isFinite)) return;
+    if (crossesGate(me.x, me.z, m.x, m.z)) { m.x = me.x; m.z = me.z; } // 닫힌 정문 게이트는 큰 걸음으로도 못 지남
     [me.x, me.z] = games.clamp(me, ...resolve(m.x, m.z, 0.4, me.fl));
     me.ry = m.ry; me.w = !!m.w; me.y = Math.max(0, Math.min(2, Number(m.y) || 0)); me.dirty = true; // y = 점프 높이
     games.onMove(me);
@@ -277,7 +282,7 @@ export function tick() {
   games.tick();
   fishing.tick();
   rituals.tick();
-  camp.tick(); fireworks.tick(); rides.tick();
+  camp.tick(); fireworks.tick(); rides.tick(); show.tick();
   for (const g in CZ) { try { CZ[g].tick(); } catch (e) { console.error(g, e); } }
   const now = Date.now();
   for (const p of players.values()) if (p.transit && now >= p.transit.end) { // 층 이동 끝: 도착 위치에 세움
@@ -292,7 +297,7 @@ setInterval(() => wss.clients.forEach((ws) => (ws.alive ? ((ws.alive = false), w
 
 // 항상 접속해 있는 봇 유저 (bots.js). 하루 일정은 캠프 시계(CAMP_AT) → 의식 시계(RITUAL_AT) → 실제 시각 순으로 따름 (시연용 시각을 맞추면 봇도 그 시간대처럼 움직임)
 const botNow = campOff ? campNow : ritOff ? () => Date.now() + ritOff : Date.now;
-export const bots = createBots({ players, now: () => botNow(), ritualNow: () => Date.now() + ritOff, rand: Math.random, handle: onMsg, join: (p) => addPlayer(p), leave: drop, seatFree: (id) => !taken.has(id), campOpen: () => camp.open(), nickTaken: (nick) => auth.nickTaken(nick), gameInfo: (p) => games.info(p), gameBusy: (gid) => games.busy(gid) });
+export const bots = createBots({ players, now: () => botNow(), ritualNow: () => Date.now() + ritOff, rand: Math.random, handle: onMsg, join: (p) => addPlayer(p), leave: drop, seatFree: (id) => !taken.has(id), campOpen: () => camp.open(), parkOpen: () => !show.closed(), nickTaken: (nick) => auth.nickTaken(nick), gameInfo: (p) => games.info(p), gameBusy: (gid) => games.busy(gid) });
 export { taken };
 
 export const listen = (port) => new Promise((res) => server.listen(port, () => res(server)));

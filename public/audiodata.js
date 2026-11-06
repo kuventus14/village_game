@@ -1,5 +1,5 @@
 // 소리 순수 규칙 (브라우저·시험이 같이 씀, WebAudio 없음): 배경음악 설정 기본값 · 구역·낮밤에 따라 곡을 섞는 비율
-import { PARK, RIDE_SLOTS, slotRect, ENTRY_PLAZA, parkPathNear, parkRoadNear } from './parkdata.js';
+import { PARK, RIDE_SLOTS, slotRect, ENTRY_PLAZA, parkPathNear, parkRoadNear, bridgeH } from './parkdata.js';
 import { BUILDINGS, BX, inside, inTown, inYard, FOUNTAIN, POND, SACRED_YARDS, TAG, DODGE, trailNear } from './world.js';
 import { inClearing, campNear } from './campdata.js';
 import { PATHS } from './nature.js';
@@ -61,7 +61,7 @@ export function surfaceAt(x, z) {
     const E = ENTRY_PLAZA; if (x >= E.x0 && x <= E.x1 && z >= E.z0 && z <= E.z1) return 'brick';
     const p = parkPathNear(x, z); return p.d <= 0.3 ? (p.p.kind === 'zoo' ? 'dirt' : 'brick') : 'grass';
   }
-  if (x < -BX) { const r = parkRoadNear(x, z); if (r.d <= r.hw + 0.5) return 'dirt'; }
+  if (x < -BX) { const r = parkRoadNear(x, z); if (r.d <= r.hw + 0.5) return bridgeH(r.s) > 0.3 ? 'brick' : 'dirt'; } // 호수 위 돌다리는 돌 소리
   const t = trailNear(x, z), c = campNear(x, z);
   return t.d <= t.hw + 0.5 || c.d <= c.hw + 0.5 ? 'forest' : 'grass';
 }

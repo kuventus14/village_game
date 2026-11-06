@@ -5,6 +5,16 @@ const BX = 120;
 export const PARK = { x0: -532, x1: -232, z0: -144, z1: 96 }; // 300 × 240 = 72,000㎡ (마을의 약 3.4배)
 export const VILLAGE_GATE_W = { x: -BX, z: -34, hw: 4.5 }; // 마을 서쪽 울타리 대문 (동쪽 GATE 와 대칭, 성당 북쪽)
 export const PARK_GATE = { x: -232, z: -34, hw: 15 }; // 놀이공원 정문 (부지 동쪽 울타리, 열린 폭 30m · 양옆 쌍둥이 탑)
+// 정문 게이트 문: 닫히면 열린 폭(양 탑 사이 30m) 전체가 벽이 됨. 서버·화면이 각자 setGateClosed 로 같은 때에 바꿈 (충돌 목록 GATE_WALL 이 비거나 하나 찬 것)
+export const GATE_WALL = [];
+export const setGateClosed = (c) => { GATE_WALL.length = 0; if (c) GATE_WALL.push([PARK_GATE.x - 1, PARK_GATE.z - PARK_GATE.hw - 0.4, PARK_GATE.x + 1, PARK_GATE.z + PARK_GATE.hw + 0.4]); };
+export const gateClosed = () => GATE_WALL.length > 0;
+// 닫혀 있을 때 한 걸음(이전 → 새 위치)이 문을 가로지르는지 (서버가 큰 걸음·뒤처진 화면이 벽을 건너뛰는 걸 막음)
+export function crossesGate(x0, z0, x1, z1) {
+  if (!GATE_WALL.length || (x0 > PARK_GATE.x) === (x1 > PARK_GATE.x)) return false;
+  const t = (PARK_GATE.x - x0) / (x1 - x0), z = z0 + (z1 - z0) * t;
+  return Math.abs(z - PARK_GATE.z) <= PARK_GATE.hw + 0.4;
+}
 export const GATE_TOWERS = [-1, 1].map((s) => ({ x: PARK_GATE.x, z: PARK_GATE.z + s * 19.4, r: 4.4 })); // 탑 안쪽 끝 = 정문 가장자리(±15)
 export const PROMENADE = { x0: -500, x1: -268, z: -34, hw: 9 }; // 중앙 대로 (서쪽 끝은 대관람차 승강장)
 export const ENTRY_PLAZA = { x0: -268, x1: -232, z0: -74, z1: 6 }; // 입구 광장
@@ -28,8 +38,15 @@ const RCP = [[-108, -34], [-120, -34], [-136, -34], [-156, -30.5], [-178, -37], 
 const rpts = catmull(RCP), racc = [0];
 for (let i = 1; i < rpts.length; i++) racc.push(racc[i - 1] + Math.hypot(rpts[i][0] - rpts[i - 1][0], rpts[i][1] - rpts[i - 1][1]));
 const RLEN = racc.at(-1);
-// pts = 가운데 선 [x,z], s = 마을 대문부터 걸은 거리, hw = 반쪽 폭 (5, 정문 앞 22m 동안 14 까지 넓어져 정문 앞마당이 됨)
-export const PARK_ROAD = { pts: rpts, s: racc, len: RLEN, hw: racc.map((s) => 5 + 9 * smooth(RLEN - 22, RLEN, s)) };
+// ── 호수와 아치 다리: 마을 대문~정문 길 가운데를 호수가 감싸고, 길은 그 위로 둥글게 솟는 다리가 됨 (정문 앞마당은 호숫가)
+// s = 길 시작(마을 대문)부터 거리. 다리는 호수 안쪽에서 땅에 닿고, 가운데는 폭이 넓어져 불꽃놀이를 보는 전망 광장이 됨
+export const LAKE = { s0: 17, s1: RLEN - 24, w: 30, y: -0.45 }; // 호수 가운데 반쪽 폭 최대 30m(길 기준), 수면 높이 -0.45
+export const BRIDGE = { s0: 8, s1: RLEN - 16, H: 6.5 }; // 다리 놓인 구간(호수보다 양쪽 8~9m 길게: 땅에서 오르막으로 시작)과 가운데 높이(땅에서 6.5m)
+const BMID = (BRIDGE.s0 + BRIDGE.s1) / 2;
+export const bridgeH = (s) => (s <= BRIDGE.s0 || s >= BRIDGE.s1 ? 0 : BRIDGE.H * Math.sin(Math.PI * (s - BRIDGE.s0) / (BRIDGE.s1 - BRIDGE.s0))); // 걷는 바닥 높이
+const plazaBump = (s) => smooth(BMID - 22, BMID - 9, s) * (1 - smooth(BMID + 9, BMID + 22, s)); // 다리 가운데 전망 광장 (폭 +4)
+// pts = 가운데 선 [x,z], s = 마을 대문부터 걸은 거리, hw = 반쪽 폭 (5, 다리 가운데 9, 정문 앞 22m 동안 14 까지 넓어져 정문 앞마당이 됨)
+export const PARK_ROAD = { pts: rpts, s: racc, len: RLEN, hw: racc.map((s) => 5 + 9 * smooth(RLEN - 22, RLEN, s) + 4.0 * plazaBump(s)) };
 // 가장 가까운 길 가운데 점: d = 거리, (px,pz), hw = 그 자리 반쪽 폭, s = 대문부터 거리, (tx,tz) = 길 방향
 export function parkRoadNear(x, z) {
   let best = { d: Infinity };
@@ -40,6 +57,22 @@ export function parkRoadNear(x, z) {
   }
   return best;
 }
+// 호수 가장자리(길 가운데에서 옆으로): 양쪽이 조금 다르게 구불구불, 양 끝은 둥글게 모임
+export function lakeEdge(s, side) {
+  if (s <= LAKE.s0 || s >= LAKE.s1) return 0;
+  const u = (2 * (s - LAKE.s0)) / (LAKE.s1 - LAKE.s0) - 1;
+  return LAKE.w * Math.sqrt(Math.max(0, 1 - u * u)) * (1 + 0.1 * Math.sin(s * 0.19 + side * 2) + 0.06 * Math.sin(s * 0.53 + side));
+}
+// 호수 가장자리까지 거리 (안이면 음수)
+export function lakeD(x, z) {
+  const r = parkRoadNear(x, z), side = r.tx * (z - r.pz) - r.tz * (x - r.px) >= 0 ? 1 : -1;
+  return r.d - lakeEdge(r.s, side);
+}
+// 호수 바닥이 땅보다 얼마나 내려가는지 (물가 4m 밖에서 완만하게 내려가 안쪽 8m 에서 가장 깊음)
+export function lakeDepth(x, z) { // 호수 양 끝(폭이 0 에 가까운 곳)은 깊이도 0 으로 모여 길 끝이 파이지 않음
+  const r = parkRoadNear(x, z), e = lakeEdge(r.s, r.tx * (z - r.pz) - r.tz * (x - r.px) >= 0 ? 1 : -1), d = r.d - e;
+  return e <= 0 || d > 4 ? 0 : 2.8 * smooth(4, -8, d) * smooth(0, 4, e);
+}
 export function parkRoadAt(s) { // 길 시작에서 s 만큼: [x, z, 방향x, 방향z, 반쪽 폭]
   let i = 1; while (i < rpts.length - 1 && racc[i] < s) i++;
   const a = rpts[i - 1], b = rpts[i], l = racc[i] - racc[i - 1], t = Math.max(0, Math.min(1, (s - racc[i - 1]) / l));
@@ -47,8 +80,12 @@ export function parkRoadAt(s) { // 길 시작에서 s 만큼: [x, z, 방향x, �
 }
 // 길가: 가로등(14m 마다 번갈아) · 벚나무(양옆 9m 마다). 걷는 땅 밖이라 충돌 없음
 export const ROAD_LAMPS = [], ROAD_TREES = [];
-for (let s = 8, i = 0; s < RLEN - 24; s += 14, i++) { const [x, z, tx, tz, hw] = parkRoadAt(s), side = i % 2 ? 1 : -1; ROAD_LAMPS.push({ x: x - tz * side * (hw + 1.3), z: z + tx * side * (hw + 1.3) }); }
-for (let s = 6, i = 0; s < RLEN - 20; s += 9, i++) for (const side of [-1, 1]) { const [x, z, tx, tz, hw] = parkRoadAt(s), o = hw + 3.4 + (i % 3) * 0.6; ROAD_TREES.push({ x: x - tz * side * o, z: z + tx * side * o, s: 1 + ((i * 7 + (side > 0 ? 3 : 0)) % 5) * 0.08 }); }
+for (let s = 8, i = 0; s < RLEN - 24; s += 14, i++) { const [x, z, tx, tz, hw] = parkRoadAt(s), side = i % 2 ? 1 : -1, p = { x: x - tz * side * (hw + 1.3), z: z + tx * side * (hw + 1.3) }; if (lakeD(p.x, p.z) > 2) ROAD_LAMPS.push(p); } // 호수·다리 위는 다리 난간 가로등(bridge.js)이 맡음
+for (let s = 6, i = 0; s < RLEN - 20; s += 9, i++) for (const side of [-1, 1]) { const [x, z, tx, tz, hw] = parkRoadAt(s), o = hw + 3.4 + (i % 3) * 0.6, p = { x: x - tz * side * o, z: z + tx * side * o, s: 1 + ((i * 7 + (side > 0 ? 3 : 0)) % 5) * 0.08 }; if (lakeD(p.x, p.z) > 3) ROAD_TREES.push(p); } // 호수 속엔 나무 없음
+for (let s = LAKE.s0 + 3, i = 0; s < LAKE.s1 - 3; s += 5.5, i++) for (const side of [-1, 1]) { // 호숫가 벚나무: 물가 3~5m 밖에 줄지어
+  const [x, z, tx, tz] = parkRoadAt(s), o = lakeEdge(s, side) + 3.4 + ((i * 5 + (side > 0 ? 2 : 0)) % 4) * 0.7, p = { x: x - tz * side * o, z: z + tx * side * o, s: 1.05 + ((i * 3 + (side > 0 ? 1 : 0)) % 5) * 0.09 };
+  if (lakeD(p.x, p.z) > 2.6 && parkRoadNear(p.x, p.z).d > 9) ROAD_TREES.push(p);
+}
 
 // ── 공원 안 길 (장식 + 시험 기준): a→b 곧은 띠, hw = 반쪽 폭. 기구 발자국과 길 사이 4m 이상 (대관람차 승강장만 대로 끝에 붙음)
 export const RIDE_SPINE_X = -366, RIDE_LOOP_Z = 27; // 기구 구역 세로 간선길 · 가로 순환길

@@ -2,13 +2,14 @@
 // · 대로(가로등·꽃·벤치·깃발 줄) · 매점·쉼터·화장실 · 동물원 입구 아치 · 길 안내판 · 기구 자리 표시(준비 중 꽃울타리) · 부지 울타리·둘레 숲 · 서쪽 대문과 벚꽃길
 // 좌표는 전부 parkdata.js (world.js 가 다시 내보냄). 동물원(zoo.js)·놀이기구(rides.js, 꼬마기차 선로 포함)는 따로 그림. 성능: 재질별로 합치고 구역별 거리 숨김, 공원 가운데에서 PARK_FAR 밖이면 통째로 숨김
 import * as THREE from 'three';
-import { PARK, PARK_GATE, GATE_TOWERS, PROMENADE, ENTRY_PLAZA, PLAZA_FOUNTAIN, ZOO_ZONE, RIDES_ZONE, PARK_ROAD, parkRoadAt, ROAD_LAMPS, ROAD_TREES, VILLAGE_GATE_W,
+import { PARK, PARK_GATE, GATE_TOWERS, PROMENADE, ENTRY_PLAZA, PLAZA_FOUNTAIN, ZOO_ZONE, RIDES_ZONE, PARK_ROAD, parkRoadAt, ROAD_LAMPS, ROAD_TREES, VILLAGE_GATE_W, BRIDGE,
   PARK_PATHS, RIDE_SLOTS, slotRect, RIDES, PARK_SHOPS, PARK_BENCHES, PARK_LAMPS, PARK_TREES, BALLOON_CARTS, PARK_SIGNS, ZOO_ARCH, PARK_FAR, PARK_CENTER } from './world.js';
 import { soft, Batch, rng, noise, patch, nightGlow, NEAR_FADE, U } from './gfx.js';
 import { Kit, bx, cy, sp, hdr, signTex, buildKit } from './buildings.js';
 import { flowers } from './sacred.js';
 import { treeGeos } from './trail.js';
 import { dirtTex, cobbleTex } from './textures.js';
+import { GATE_MS } from './showdata.js';
 
 const PI = Math.PI, G = PARK_GATE, FW = PLAZA_FOUNTAIN;
 const CREAM = '#fff4e6', PINK = '#ffc4d2', HOT = '#ff8fb1', MINT = '#8fdcc4', GOLD = '#ffd45a', LILAC = '#cdb6ff', SKY = '#9fd3ff';
@@ -64,7 +65,7 @@ export function createParkSite(scene, Q) {
       const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)], l = Math.hypot(b[0] - a[0], b[1] - a[1]), nx = -(b[1] - a[1]) / l, nz = (b[0] - a[0]) / l, s = PARK_ROAD.s[i];
       const w = PARK_ROAD.hw[i] - 0.9 + (noise(s * 0.3, 3) - 0.5) * 0.6;
       for (const [o, u] of [[-w - 0.6, 0], [-w, 0.12], [w, 0.88], [w + 0.6, 1]]) { P.push(x + nx * o, 0.03, z + nz * o); uv.push(u * (w * 2 + 1.2) / 4, s / 4); col.push(...(u === 0 || u === 1 ? [0.86, 0.95, 0.8] : [1, 0.97, 0.94])); }
-      if (i) for (let k = 0; k < 3; k++) { const p = (i - 1) * 4 + k, q = i * 4 + k; idx.push(p, q, p + 1, p + 1, q, q + 1); }
+      if (i && !(PARK_ROAD.s[i - 1] >= BRIDGE.s0 - 1 && s <= BRIDGE.s1 + 1)) for (let k = 0; k < 3; k++) { const p = (i - 1) * 4 + k, q = i * 4 + k; idx.push(p, q, p + 1, p + 1, q, q + 1); } // 다리 구간은 다리 바닥(bridge.js)이 대신
     });
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(P.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3)); g.setIndex(idx);
     const m = new THREE.Mesh(g, dirt); m.receiveShadow = true; near.add(m);
@@ -140,6 +141,34 @@ export function createParkSite(scene, Q) {
   // 정문 앞 꽃화분 줄 (길 양옆)
   for (const s of [-1, 1]) for (let i = 0; i < 4; i++) { const x = G.x + 3.5 + i * 4.2, z = G.z + s * 12.8; kG.at(x, 0, z).p('stone', cy(0.9, 0.7, 0.8, 12), [0, 0.4, 0], '#ffe0e6'); flowers(kG, -0.7, -0.7, 0.7, 0.7, 0.75, 14, i * 3 + (s > 0 ? 11 : 1)); }
   lodKit(kG, G.x, G.z, 0);
+
+  /* ───── 정문 게이트 문 (처음부터 달려 있음): 평소엔 양쪽 탑 옆에 2단으로 접혀 열려 있다가 불꽃놀이 때 가운데로 펼쳐지며 닫힘 ───── */
+  // 한 짝 = 접이문 2장(폭 7.4m·높이 11.2m): 쇠창살 살 + 분홍 틀 + 금빛 별 + 끝 장식. 닫힘 정도 u(0 열림~1 닫힘)에 따라 경첩(탑 안쪽 끝)에서 90° 돌고 둘째 장이 180° 접힘
+  const GL = 7.4, GH = 11.2, gate = { u: 0, to: 0, speed: 1 / (GATE_MS / 1000), leaves: [], signs: [] };
+  const panel = () => {
+    const k = new Kit(); k.at(0, 0, 0);
+    k.p('plain', bx(0.3, 0.7, GL), [0, 0.35, GL / 2], HOT).p('plain', bx(0.3, 0.5, GL), [0, GH - 0.25, GL / 2], HOT);
+    for (const y of [GH * 0.36, GH * 0.7]) k.p('plain', bx(0.2, 0.26, GL), [0, y, GL / 2], CREAM);
+    for (const z of [0.2, GL - 0.2]) k.p('plain', bx(0.38, GH, 0.4), [0, GH / 2, z], PINK).p('glow', sp(0.34, 8, 6), [0, GH + 0.2, z], hdr('#ffd38a', 1.6));
+    for (let z = 0.75; z < GL - 0.4; z += 0.55) k.p('plain', bx(0.1, GH - 1.1, 0.1), [0, GH / 2, z], CREAM).p('shine', new THREE.ConeGeometry(0.11, 0.4, 5), [0, GH - 0.6, z], GOLD);
+    for (const f of [-1, 1]) k.p('shine', starGeo(1.35, 0.22, 0.45), [f * 0.22, GH * 0.54, GL / 2], GOLD, [0, f * PI / 2, 0]);
+    const g = new THREE.Group(); buildKit(k, g, false); return g;
+  };
+  for (const s of [-1, 1]) {
+    const hinge = new THREE.Group(), a = new THREE.Group(), pb = new THREE.Group();
+    hinge.position.set(G.x, 0, G.z + s * G.hw); hinge.add(a); a.add(panel()); a.add(pb); pb.position.set(-s * 0.42, 0, GL); pb.add(panel()); root.add(hinge);
+    gate.leaves.push({ s, hinge, pb });
+  }
+  const closeTex = signTex('🎆 불꽃놀이 · 영업 임시 중단', '#ff7aa2', '#ffffff', 960, 170, 58);
+  for (const f of [-1, 1]) { const m = board(root, boards, closeTex, 9, 1.6, G.x + f * 0.5, 5.2, G.z, f * PI / 2, 400); m.visible = false; gate.signs.push(m); }
+  const GATE_EASE = (u) => u * u * (3 - 2 * u);
+  function poseGate() {
+    const e = GATE_EASE(gate.u);
+    for (const { s, hinge, pb } of gate.leaves) { hinge.rotation.y = (s < 0 ? 0 : PI) + (1 - e) * (s < 0 ? -PI / 2 : PI / 2); pb.rotation.y = (1 - e) * s * PI; }
+    for (const m of gate.signs) m.scale.setScalar(gate.u > 0.97 ? 1 : 0.0001); // (LOD 가 visible 을 직접 바꾸므로 크기로 숨김)
+  }
+  poseGate();
+  const setGate = (closed, instant = false) => { gate.to = closed ? 1 : 0; if (instant) { gate.u = gate.to; poseGate(); } };
 
   /* ───── 부지 울타리 (정문·성벽 자리는 비움) + 기둥 ───── */
   const kF = new Kit(), gz0 = G.z - 35, gz1 = G.z + 35, fence = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0), a = Math.atan2(x1 - x0, z1 - z0); for (const y of [0.45, 0.95]) kF.at((x0 + x1) / 2, y, (z0 + z1) / 2, a).p('wood', bx(0.08, 0.13, L, 1.5), [0, 0, 0], '#fff3e2'); for (let s = 0; s <= L; s += 3) { const t = s / L; kF.at(x0 + (x1 - x0) * t, 0, z0 + (z1 - z0) * t).p('wood', bx(0.2, 1.25, 0.2, 0.6), [0, 0.62, 0], '#fff6e6').p('plain', sp(0.15, 8, 4), [0, 1.27, 0], s % 12 < 3 ? PINK : '#fff6e6'); } };
@@ -282,10 +311,11 @@ export function createParkSite(scene, Q) {
   function update(dt, camera) {
     camera.getWorldPosition(cam);
     const d = Math.hypot(cam.x - PARK_CENTER.x, cam.z - PARK_CENTER.z);
+    if (gate.u !== gate.to) { gate.u = gate.to > gate.u ? Math.min(gate.to, gate.u + dt * gate.speed) : Math.max(gate.to, gate.u - dt * gate.speed); poseGate(); } // 정문 게이트 문 움직임 (멀어서 숨은 때도 상태는 계속 감)
     root.visible = d < PARK_FAR; near.visible = cam.x < -40 || d < PARK_FAR; // 길은 마을 서쪽 절반에서만
     if (!root.visible) return;
     const t = U.time.value; star.rotation.y = t * 0.6; star.position.y = 6.4 + Math.sin(t * 1.3) * 0.15;
     jets.scale.y = 1 + Math.sin(t * 2.3) * 0.06;
   }
-  return { update, root };
+  return { update, root, setGate };
 }

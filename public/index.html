@@ -139,6 +139,8 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
 #chatBtn[aria-pressed=true]{background:#ffe3e8}
 #chatBtn em{position:absolute;top:4px;right:4px;width:10px;height:10px;border-radius:50%;background:var(--coral);box-shadow:0 0 0 2px #fff} /* 닫혀 있을 때 새 채팅 알림 점 */
 /* 자동 걸음 중 표시 (지도에서 고른 곳으로 걷는 동안) */
+#showBar{position:absolute;top:calc(104px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:min(560px,calc(100vw - 20px));padding:9px 18px;border-radius:18px;background:rgba(40,28,60,.86);color:#fff;text-align:center;box-shadow:var(--sh);border:2px solid var(--coral);pointer-events:none;display:flex;flex-direction:column;gap:2px;z-index:4}
+#showBar b{font-size:17px}#showBar small{font-size:13px;opacity:.85;line-height:1.4}#showBar em{font-style:normal;font-size:15px;color:#ffd38a;font-variant-numeric:tabular-nums}
 #autoBar{position:absolute;top:calc(56px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:4px 5px 4px 13px;font-size:14px}
 #autoBar button{padding:4px 11px;border-radius:999px;background:var(--coral);color:#fff;font-size:14px}
 /* 사용방법 (설정 메뉴에서 엶) */
@@ -241,6 +243,7 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
   #mm .mmpl{order:1;font-size:11px;padding:2px 8px;max-width:150px}
   /* 일시 안내는 위 알약 줄 아래 */
   #gbar,#autoBar{top:calc(48px + env(safe-area-inset-top))}
+  #showBar{top:calc(92px + env(safe-area-inset-top));padding:7px 14px}#showBar b{font-size:15px}#showBar small{font-size:12px}
   #toast{top:calc(92px + env(safe-area-inset-top));font-size:14px;padding:7px 14px}
   /* 상황 안내(앉기·타기·기도·낚시·불꽃): 아래 가운데 열만 써서 조이스틱·점프·💬 를 안 가림 (#hud 를 붙여 각 파일 CSS 보다 우선) */
   #hud :is(#sitq,#rtq,#fsq,#rdq,#fwq){bottom:calc(10px + env(safe-area-inset-bottom));min-width:0;max-width:calc(100vw - 340px);padding:6px 12px;gap:4px}
@@ -305,6 +308,7 @@ button.alt small{font-size:13px;opacity:.65;margin-left:4px}
   <button id="chatBtn" aria-label="채팅 열기·닫기" aria-pressed="false">💬<em hidden></em></button>
   <button id="poseBtn" aria-label="자세 바꾸기" aria-pressed="false">🧘</button>
   <div id="poseMenu" class="panel" hidden></div>
+  <div id="showBar" hidden></div>
   <div id="autoBar" class="chip" hidden>🚶 자동 걸음 중<button type="button">취소</button></div>
   <div id="mm" role="button" aria-label="지도 (누르면 크게)"><span class="chip mmpl"></span><canvas></canvas></div>
 </div>
