@@ -359,6 +359,7 @@ async function casinoSync() {
 MG = createMinigames({ scene, players, getMe: () => me, send, toast, place, bubble, refreshTags: () => players.forEach(renderTag), host: $('#hud') });
 
 /* ───────── 가입·로그인 → 아바타 꾸미기 → 입장 ───────── */
+const GUEST_ONLY = true;
 let account = null; // { token, nick, avatar }
 let prev = null; // 입장 전 화면에서 빙글 도는 미리보기 캐릭터
 const PV = [0, 7];
@@ -379,9 +380,11 @@ function setMode(m) {
   $('#aerr').textContent = '';
 }
 document.querySelectorAll('#am button').forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
-const showForm = (which) => { $('#af').hidden = which !== 'auth'; $('#jf').hidden = which !== 'edit'; $('#gf').hidden = which !== 'guest'; $('#join').hidden = false; $('#hud').hidden = true; phase = 'join'; };
+const showForm = (which) => { $('#entry').hidden = which !== 'entry'; $('#af').hidden = which !== 'auth'; $('#jf').hidden = which !== 'edit'; $('#gf').hidden = which !== 'guest'; $('#join').hidden = false; $('#hud').hidden = true; phase = 'join'; };
 function showAuth(msg = '') {
-  account = null; showForm('auth'); setMode('login'); $('#aerr').textContent = msg;
+  account = null;
+  showForm(GUEST_ONLY ? 'entry' : 'auth');
+  if (!GUEST_ONLY) { setMode('login'); $('#aerr').textContent = msg; }
   setPreview(randomAvatar(Math.random() < 0.5 ? 'm' : 'f'));
 }
 function showEditor() { showForm('edit'); editor.set(account.avatar || randomAvatar('f')); }
@@ -406,12 +409,20 @@ $('#af').onsubmit = async (e) => {
   afterLogin();
 };
 // 바로 입장(손님): 계정·기록 없이. 성별만 고르면 아바타는 성별에 맞게 랜덤, 닉네임은 서버가 랜덤으로 정함 (welcome 에서 받음)
+function enterGuest(g) {
+  account = { guest: true, g, nick: null, avatar: randomAvatar(g) };
+  setPreview(account.avatar); enter();
+}
+$('#entry').onsubmit = (e) => {
+  e.preventDefault();
+  if (ws?.readyState === WebSocket.CONNECTING || ws?.readyState === WebSocket.OPEN) return;
+  enterGuest(Math.random() < 0.5 ? 'm' : 'f');
+};
 $('#guestgo').onclick = () => { showForm('guest'); setPreview(randomAvatar(Math.random() < 0.5 ? 'm' : 'f')); };
 $('#guestback').onclick = () => showAuth();
 $('#gg').onclick = (e) => {
   const g = e.target.closest('button')?.dataset.g; if (!g) return;
-  account = { guest: true, g, nick: null, avatar: randomAvatar(g) };
-  setPreview(account.avatar); enter();
+  enterGuest(g);
 };
 $('#rnd').onclick = () => editor.random();
 $('#jf').onsubmit = async (e) => {
@@ -425,7 +436,8 @@ $('#jf').onsubmit = async (e) => {
 };
 $('#kb').onclick = () => location.reload();
 (async () => { // 처음 열 때: 저장된 로그인이 있으면 바로 이어서
-  setPreview(randomAvatar('f')); showForm('auth'); setMode('login');
+  showAuth();
+  if (GUEST_ONLY) return;
   const token = store.get('village.token');
   if (token) {
     const r = await api('me', { token });
@@ -460,7 +472,7 @@ atmo.clock = makeClock({ t: qs.get('t'), speed: qs.get('speed'), mode: store.get
 const markTime = () => document.querySelectorAll('#setMenu [data-t]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.t === (store.get(TIME_KEY) ?? 'live')));
 $('#setMenu').insertAdjacentHTML('beforeend', '<div class="hd">🕒 시간 <small>(고정은 이 기기에서만)</small></div><div class="trow">' + Object.entries(MODES).map(([id, name]) => `<button data-t="${id}">${name}</button>`).join('') + '</div>');
 $('#setMenu').insertAdjacentHTML('beforeend', '<div class="hd">🎨 그래픽</div>' + Object.entries(LEVELS).map(([id, name]) => `<button data-q="${id}" aria-pressed="${id === Q.level}"><b>${name}</b><small>${{ high: '후처리·그림자·풀 모두 최고로', normal: '폰에 알맞게 (기본)', low: '가볍게: 효과를 줄여 빠르게' }[id]}</small></button>`).join(''));
-$('#setMenu').insertAdjacentHTML('beforeend', '<div class="hd">👤 내 계정</div><button data-a="edit"><b>아바타 꾸미기</b><small>모습을 바꿔요</small></button><button data-a="logout"><b>로그아웃</b><small>다른 계정으로 들어갈 때</small></button>');
+if (!GUEST_ONLY) $('#setMenu').insertAdjacentHTML('beforeend', '<div class="hd">👤 내 계정</div><button data-a="edit"><b>아바타 꾸미기</b><small>모습을 바꿔요</small></button><button data-a="logout"><b>로그아웃</b><small>다른 계정으로 들어갈 때</small></button>');
 // 연못 낚시 (fishing.js): 안내·낚싯대·찌·결과·도감. 설정 메뉴에 '낚시 도감'을 넣으므로 메뉴를 다 만든 뒤에 만듦
 const FISH = createFishing({ scene, players, getMe: () => me, send, toast, bubble, host: $('#hud'), menu: $('#setMenu'), canPrompt: () => !MG.active() && !me.transit && me.sit < 0 && $('#sitq').hidden });
 // 성당·사찰·교회 활동 (rituals.js): 자리 앞 행동 패널·염주·묵주·고해·피아노·찬양·공동 의식·소리. 설정에 '🔊 소리'·'🙏 내 기록'
