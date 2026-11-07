@@ -1,5 +1,6 @@
 // 아바타 꾸미기 화면: 성별 + 탭(머리/얼굴/옷/꾸미기). 고르면 onChange(아바타) 로 알려 줌.
 import { OPT, OUTFITS, HAIRS, SKINS, BOTTOMS, defaultAvatar, randomAvatar, cleanAvatar } from './world.js';
+import { PRICE, lockFix } from './closet.js';
 
 const TABS = [
   ['머리', [['chips', 'hs', '머리 모양', OPT.hs], ['sw', 'hc', '머리 색', HAIRS]]],
@@ -8,8 +9,8 @@ const TABS = [
   ['꾸미기', [['chips', 'ac', '악세서리', OPT.ac]]],
 ];
 
-export function createEditor(root, onChange) {
-  let sel = defaultAvatar('m'), tab = 0;
+export function createEditor(root, onChange, { onLocked } = {}) {
+  let sel = defaultAvatar('m'), tab = 0, owned = []; // owned: 산 유료 옷 목록 (옷 가게). 안 산 건 잠김
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
   const btn = (text, fn, cls) => { const b = el('button', cls, text); b.type = 'button'; b.onclick = fn; return b; };
 
@@ -23,7 +24,8 @@ export function createEditor(root, onChange) {
       box.append(el('div', 'ot', title));
       const row = el('div', kind === 'sw' ? 'sw' : 'chips');
       list.forEach((v, i) => {
-        const b = btn(kind === 'sw' ? '' : v, () => { sel[key] = i; sync(true); });
+        const b = btn(kind === 'sw' ? '' : v, () => { if (PRICE[key + i] && !owned.includes(key + i)) return onLocked?.(key + i); sel[key] = i; sync(true); });
+        if (PRICE[key + i]) { b.dataset.p = key + i; b.dataset.n = v; }
         if (kind === 'sw') { b.style.background = v; b.setAttribute('aria-label', `${title} ${i + 1}`); }
         b.dataset.k = key; b.dataset.i = i; row.append(b);
       });
@@ -43,12 +45,14 @@ export function createEditor(root, onChange) {
     tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', +b.dataset.t === tab));
     sections.forEach((s, i) => (s.hidden = i !== tab));
     body.querySelectorAll('[data-k]').forEach((b) => b.setAttribute('aria-pressed', sel[b.dataset.k] === +b.dataset.i));
+    body.querySelectorAll('[data-p]').forEach((b) => { const lock = !owned.includes(b.dataset.p); b.classList.toggle('lock', lock); b.textContent = lock ? `🔒 ${b.dataset.n}` : b.dataset.n; }); // 안 산 옷은 잠금 표시
     if (changed) onChange(sel);
   }
   sync();
   return {
     get: () => ({ ...sel }),
     set(a) { sel = cleanAvatar(a); sync(true); },
-    random() { sel = randomAvatar(sel.g); sync(true); },
+    random() { sel = lockFix(randomAvatar(sel.g), owned, defaultAvatar(sel.g)); sync(true); }, // 안 산 옷은 빼고 랜덤
+    setOwned(list) { owned = list || []; sync(); },
   };
 }

@@ -1,7 +1,13 @@
 import * as THREE from 'three';
-import { ACT_STATUS, POSES, BUILDINGS, OUTFITS, STATUS, PLACE, SEATS, SIT_STATUS, SIT_TEXT, standPos, randomAvatar, FLOOR_H, PORTALS, transitAt, inside, placeOf, resolve, floorY, FACADES, inPark, setGateClosed, gateClosed } from './world.js';
+import { ACT_STATUS, POSES, BUILDINGS, OUTFITS, STATUS, PLACE, SEATS, SIT_STATUS, SIT_TEXT, standPos, randomAvatar, FLOOR_H, PORTALS, transitAt, inside, placeOf, resolve, roomAt, roomBox, ROOM, floorY, FACADES, inPark, setGateClosed, gateClosed } from './world.js';
 import { SHOW_TEXT, SHOW_LEN } from './showdata.js';
 import { createParkShow } from './parkshow.js';
+import { createShop as createFishShop } from './shop.js';
+import { createClothShop } from './clothshop.js';
+import { createDistrict } from './district.js';
+import { createHousing } from './housing.js';
+import { createRoom } from './room.js';
+import { ownedWith, priceOfItem } from './closet.js';
 import { createShowAudio } from './showaudio.js';
 import { audio } from './audio.js';
 import { sfx as sfxCtl } from './sfx.js';
@@ -235,6 +241,10 @@ for (const [k, [em, label]] of Object.entries(STATUS)) {
   b.onclick = () => { send({ t: 'st', s: k }); me.s = k; renderTag(me); renderMeta(); $('#stMenu').hidden = true; };
   $('#stMenu').append(b);
 }
+function openEditor() { // 아바타 꾸미기 화면으로 (다시 불러와서 편집 화면부터)
+  if (account?.guest) return toast('바로 입장 중에는 아바타를 바꿀 수 없어요. 회원가입하면 꾸밀 수 있어요');
+  sessionStorage.setItem('village.edit', '1'); location.reload();
+}
 const MENUS = ['#roster', '#stMenu', '#setMenu', '#poseMenu'];
 const toggleMenu = (id) => MENUS.forEach((m) => ($(m).hidden = m === id ? !$(m).hidden : true));
 $('#stBtn').onclick = () => toggleMenu('#stMenu');
@@ -293,6 +303,9 @@ function handle(m) {
     $('#join').hidden = true; $('#hud').hidden = false;
     camera.clearViewOffset(); joinSide = null;
     applyShow(m.show, true); // 불꽃놀이 시간이면 안내·정문 게이트 상태를 맞춤
+    SHOP.snapshot(m.shop); // 물고기 가방·오늘 판 수
+    CLOTH.snapshot(m.closet); // 산 옷 목록
+    HOUSE_UI.snapshot(m.house); ROOMS.snapshot(m.house); // 주택 단지 주인 목록·열린 큰길·내 집(·가구 창고)
     $('#log').replaceChildren(); m.log.forEach(logLine);
     $('#kick').hidden = true; m.state?.forEach((x) => MG.handle(x));
     renderMeta();
@@ -303,8 +316,12 @@ function handle(m) {
   else if (m.t === 'auth') { store.del('village.token'); showAuth('로그인이 필요해요'); }
   else if (m.t === 'kicked') { kicked = true; $('#kick').hidden = false; }
   else if (m.t === 'show') applyShow(m);
+  else if (m.t === 'shop') SHOP.handle(m);
+  else if (m.t === 'house') { if (['in', 'out', 'furn', 'inv'].includes(m.a)) ROOMS.handle(m); else { HOUSE_UI.handle(m); if (m.a === 'owner' && m.o === me?.name) ROOMS.setLock(!!m.l); } }
+  else if (m.t === 'warp') { const p = players.get(m.id); if (p && p !== me) Object.assign(p, { x: m.x, z: m.z, tx: m.x, tz: m.z, tr: m.ry, ry: m.ry }); } // 서버가 다른 사람을 멀리 옮김(집 안 드나들기) → 미끄러지지 않고 바로 그 자리
+  else if (m.t === 'closet') CLOTH.handle(m);
   else if (m.t === 'evac') { if (me && inPark(me.x, me.z) && !me.fl) { toast('🎆 불꽃놀이가 곧 시작돼요 · 정문 밖 다리 위로 나가요'); autoWalk(m.x, m.z); } } // 영업 임시 중단: 놀이공원 안이면 정문 밖으로 자동 걸음
-  else if (m.t === 'tp') { Object.assign(me, { x: m.x, z: m.z, tr: m.ry, ry: m.ry, jy: 0, vy: 0 }); stopAuto(); } // 서버가 옮김(게임·기구 등) → 자동 걸음 끝
+  else if (m.t === 'tp') { const far = Math.hypot(m.x - me.x, m.z - me.z) > 40; Object.assign(me, { x: m.x, z: m.z, tr: m.ry, ry: m.ry, jy: 0, vy: 0 }); stopAuto(); if (far) { camT.set(m.x, 1.2, m.z); camShrink = 1; } } // 서버가 옮김(게임·기구 등) → 자동 걸음 끝
   else if (m.t === 'dm') {
     const other = m.from === me.name ? m.to : m.from, line = { me: m.from === me.name, from: m.from, text: m.text };
     if (!threads.has(other)) threads.set(other, { msgs: [], unread: 0 });
@@ -315,7 +332,7 @@ function handle(m) {
   else if (m.t === 'full') toast('마을이 꽉 찼어요 😢');
   else if (m.t === 'join') { addPlayer(m.p); toast(`${m.p.name}님이 놀러 왔어요 👋`); renderMeta(); }
   else if (m.t === 'sitfail') toast('앗, 그 자리엔 이미 누가 앉았어요');
-  else if (m.t === 'pose') { const p = players.get(m.id); if (p) p.pose = m.p; if (p === me) markPose(); }
+  else if (m.t === 'pose') { const p = players.get(m.id); if (p) { p.pose = m.p; p.rh = m.p ? m.h || 0 : 0; } if (p === me) markPose(); } // rh: 가구에 앉거나 누운 높이(m)
   else if (m.t === 'posefail') { me.pose = ''; markPose(); toast('지금은 자세를 바꿀 수 없어요'); }
   else if (m.t === 'leave') { removePlayer(m.id); renderMeta(); }
   else if (m.t === 's') {
@@ -376,7 +393,7 @@ function setPreview(a) {
   prev = buildAvatar(a);
   prev.root.position.set(PV[0], 0, PV[1]); scene.add(prev.root); prev.wave = 1.4;
 }
-const editor = createEditor($('#ed'), setPreview);
+const editor = createEditor($('#ed'), setPreview, { onLocked: (key) => toast(`🔒 마을 광장 옷 가게에서 살 수 있어요 · 🪙 ${priceOfItem(key).toLocaleString('ko-KR')}`) });
 let mode = 'login';
 function setMode(m) {
   mode = m;
@@ -393,7 +410,7 @@ function showAuth(msg = '') {
   account = null; showForm('auth'); setMode('login'); $('#aerr').textContent = msg;
   setPreview(randomAvatar(Math.random() < 0.5 ? 'm' : 'f'));
 }
-function showEditor() { showForm('edit'); editor.set(account.avatar || randomAvatar('f')); }
+function showEditor() { showForm('edit'); editor.setOwned(ownedWith(account.closet, account.avatar)); editor.set(account.avatar || randomAvatar('f')); }
 function afterLogin() {
   if (account.avatar && !sessionStorage.getItem('village.edit')) { setPreview(account.avatar); enter(); } else showEditor();
 }
@@ -410,7 +427,7 @@ $('#af').onsubmit = async (e) => {
   const r = await api(mode, mode === 'signup' ? { id, nick, pw } : { id, pw });
   $('#ago').disabled = false;
   if (!r.ok) return err(r.error);
-  account = { token: r.token, nick: r.nick, avatar: r.avatar };
+  account = { token: r.token, nick: r.nick, avatar: r.avatar, closet: r.closet };
   store.set('village.token', r.token); $('#pw').value = '';
   afterLogin();
 };
@@ -429,7 +446,7 @@ $('#jf').onsubmit = async (e) => {
   const r = await api('avatar', { token: account.token, avatar: editor.get() });
   setTimeout(() => ($('#go').disabled = false), 2500);
   if (!r.ok) return toast(r.error);
-  account.avatar = r.avatar; sessionStorage.removeItem('village.edit');
+  account.avatar = r.avatar; account.closet = r.closet; sessionStorage.removeItem('village.edit');
   enter();
 };
 $('#kb').onclick = () => location.reload();
@@ -438,7 +455,7 @@ $('#kb').onclick = () => location.reload();
   const token = store.get('village.token');
   if (token) {
     const r = await api('me', { token });
-    if (r.ok) { account = { token, nick: r.nick, avatar: r.avatar }; return afterLogin(); }
+    if (r.ok) { account = { token, nick: r.nick, avatar: r.avatar, closet: r.closet }; return afterLogin(); }
     store.del('village.token');
   }
 })();
@@ -481,6 +498,14 @@ const CMP = createCamp({ scene, camera, renderer, Q, players, getMe: () => me, s
 // 배경음악 (bgm.js): 낮·밤·놀이공원·숲길 곡을 구역에 따라 섞음. 설정 '🔊 소리'에 '배경음악' 줄 (효과음 줄 다음)
 const BGM = createBgm({ menu: $('#setMenu'), lite: Q.lite });
 // 불꽃놀이(3D) + 소리: 쇼 시계 = (지금 − 서버가 알려 준 쇼 시작 시각). 터짐마다 소리 (parkshow.js·showaudio.js, 대본은 showscript.js)
+// 물고기 가게(연못 북쪽): 가방의 물고기를 칩으로 바꿈 (shop.js, 규칙은 서버 shop.js)
+// 옷 가게(마을 광장 남서쪽): 칩으로 옷·꾸미기를 사 계정에 저장, 아바타 꾸미기에서 입음 (clothshop.js, 규칙은 서버 closet.js)
+const CLOTH = createClothShop({ scene, getMe: () => me, send, toast, host: $('#hud'), onEdit: () => openEditor(), isGuest: () => !!account?.guest, onOwned: (list) => { if (account && !account.guest) account.closet = list; } });
+// 주택 단지(마을 북쪽): 북문·큰길·집터·집 (district.js) + 입구 광장 집터 안내(housing.js, 규칙은 서버 house.js)
+const DIST = createDistrict(scene);
+const HOUSE_UI = createHousing({ getMe: () => me, send, toast, host: $('#hud'), district: DIST, walk: (x, z) => autoWalk(x, z), isGuest: () => !!account?.guest, onOpenChange: (n) => { if (n > 1) pathWorker()?.postMessage({ open: n }); } }); // 큰길이 더 열리면 자동 걸음 격자도 다시 만듦
+const ROOMS = createRoom({ scene, players, getMe: () => me, send, toast, host: $('#hud'), plots: () => HOUSE_UI.state.plots, isGuest: () => !!account?.guest }); // 집 안(방)·가구 꾸미기·가구 백화점 (room.js, 규칙은 서버 house.js)
+const SHOP = createFishShop({ scene, getMe: () => me, send, toast, host: $('#hud') });
 const SHOWA = createShowAudio({ audio, bgm: BGM, sfx: sfxCtl });
 const PSHOW = createParkShow({ scene, camera, renderer, Q, hooks: { onLaunch: (e) => SHOWA.launch(e), onBurst: (e, x, y, z) => SHOWA.burst(e, x, y, z), onEm: (e) => SHOWA.em(e) } });
 // 효과음 2단계 (fx.js: 마을·기구·동물원·게임·낚시·카지노 소리, footsteps.js: 발소리) · 반딧불이 (fireflies.js: 숲길·사찰 마당·불멍 공터, 밤에만)
@@ -493,7 +518,7 @@ $('#setMenu').onclick = async (e) => {
   if (b.dataset.t) { store.set(TIME_KEY, b.dataset.t); atmo.clock = makeClock({ mode: b.dataset.t }); setTimeout(tick, 50); return markTime(); }
   if (b.dataset.q) { store.set(Q_KEY, b.dataset.q); const u = new URL(location.href); u.searchParams.delete('q'); location.replace(u); return; } // 품질은 다시 불러와야 적용됨
   if (b.dataset.a === 'help') { $('#setMenu').hidden = true; $('#help').hidden = false; return; }
-  if (b.dataset.a === 'edit') { if (account?.guest) return toast('바로 입장 중에는 아바타를 바꿀 수 없어요. 회원가입하면 꾸밀 수 있어요'); sessionStorage.setItem('village.edit', '1'); location.reload(); }
+  if (b.dataset.a === 'edit') openEditor();
   else { if (!account?.guest) { await api('logout', { token: account.token }); store.del('village.token'); } location.reload(); }
 };
 setView(viewId, false);
@@ -673,7 +698,7 @@ function applyShow(s, first = false) {
 }
 setInterval(paintShow, 500);
 function autoWalk(x, z, again, done) { // done: 도착하면 부를 일 (있으면 0.25m 까지 바짝 다가감, '도착했어요' 알림 없음)
-  if (!me) return;
+  if (!me || roomAt(me.x, me.z)) return; // 집 안에선 자동 걸음 없음(방이 작음)
   if (MG.active() || RIDE.busy() || me.transit || RIT.acting() || CMP.drawing()) return toast('지금은 자동 걸음을 쓸 수 없어요');
   if (me.fl) return toast('위층에서는 자동 걸음이 안 돼요 · 1층에서 써 주세요'); // 지도는 1층 땅만 보여 줌
   if (show.ph !== 'open' && inPark(x, z) && !inPark(me.x, me.z)) return toast('불꽃놀이 시간에는 놀이공원이 영업을 임시 중단해요'); // 안으로 들어가는 길 찾기 거절
@@ -809,13 +834,14 @@ const frameFn = (fixedDt) => {
       pitch = lerp(pitch, tween.pitch, q); dist = lerp(dist, tween.dist, q);
       if (Math.abs(pitch - tween.pitch) < 0.005 && Math.abs(dist - tween.dist) < 0.02) tween = null;
     }
-    const rig = camRig([camT.x, camT.y, camT.z], yaw, pitch, dist, (x, z) => (me ? me.fl * FLOOR_H + floorY(x, z) : 0), (camera.fov * Math.PI) / 360); // 위로 더 끌면 아바타 뒤 낮은 곳에서 하늘을 올려다봄
+    const rig = camRig([camT.x, camT.y, camT.z], yaw, me && roomAt(me.x, me.z) ? Math.min(pitch, 0.34) : pitch, dist, (x, z) => (me ? me.fl * FLOOR_H + floorY(x, z) : 0), (camera.fov * Math.PI) / 360); // 위로 더 끌면 아바타 뒤 낮은 곳에서 하늘을 올려다봄
     camera.position.set(...rig.pos);
     // 건물 안에 들어서면 카메라도 방 안에서 따라옴: 벽·천장 밖으로 안 나가고, 문턱을 넘을 땐 부드럽게 바뀜
     let ft = 1;
-    inKey = me ? Object.keys(BUILDINGS).find((key) => inside(BUILDINGS[key], me.x, me.z)) ?? null : null;
+    const rid = me ? roomAt(me.x, me.z) : 0; // 집 안(방): 건물처럼 벽·천장 안으로 카메라를 가둠
+    inKey = rid ? 'room' : me ? Object.keys(BUILDINGS).find((key) => inside(BUILDINGS[key], me.x, me.z)) ?? null : null;
     if (inKey) {
-      const b = BUILDINGS[inKey], top = inKey === 'casino' ? (Math.floor((me.gy + 0.3) / FLOOR_H) + 1) * FLOOR_H : b.h;
+      const b = rid ? { ...roomBox(rid), cx: roomBox(rid).cx, cz: roomBox(rid).cz, w: ROOM.w, d: ROOM.d, h: ROOM.h } : BUILDINGS[inKey], top = inKey === 'casino' ? (Math.floor((me.gy + 0.3) / FLOOR_H) + 1) * FLOOR_H : b.h;
       const lo = [b.cx - b.w / 2 + 0.35, me.gy + 0.35, b.cz - b.d / 2 + 0.35], hi = [b.cx + b.w / 2 - 0.35, top - 0.95, b.cz + b.d / 2 - 0.35]; // 천장·조명에 너무 붙지 않게
       const P = [camT.x, camT.y, camT.z], Q = [camera.position.x, camera.position.y, camera.position.z];
       for (let a = 0; a < 3; a++) { const d = Q[a] - P[a]; if (d > 1e-6 && Q[a] > hi[a]) ft = Math.min(ft, (hi[a] - P[a]) / d); else if (d < -1e-6 && Q[a] < lo[a]) ft = Math.min(ft, (lo[a] - P[a]) / d); }
@@ -823,10 +849,11 @@ const frameFn = (fixedDt) => {
     }
     camShrink = lerp(camShrink, ft, 1 - Math.exp(-dt * 8));
     camera.position.lerpVectors(camT, camera.position, camShrink);
-    const sacredIn = inKey && BUILDINGS[inKey].fy; // 성당·교회·사찰 안: 높은 천장·제대 쪽으로 시선을 들어 올림 (절·기도 중엔 내 동작이 보이게 조금만)
+    const sacredIn = inKey && BUILDINGS[inKey]?.fy; // 성당·교회·사찰 안: 높은 천장·제대 쪽으로 시선을 들어 올림 (절·기도 중엔 내 동작이 보이게 조금만)
     lookUp = lerp(lookUp, me && pitch < 0.5 && !rig.tilt ? (sacredIn ? (RIT.acting() ? 0.4 : 2.6) : inKey ? 0 : facadeLift(me.x, me.z)) : 0, 1 - Math.exp(-dt * 2.5));
     const lk = Math.min(1, rig.tilt * 5), lx = rig.look[0] + (camera.position.x - rig.pos[0]) * lk, ly = rig.look[1] + (camera.position.y - rig.pos[1]) * lk, lz = rig.look[2] + (camera.position.z - rig.pos[2]) * lk; // 올려다볼 땐 벽에 막혀 당겨져도 시선 방향 그대로
     camera.lookAt(lx, ly + lookUp * Math.min(1, camera.position.distanceTo(camT) / 5.2), lz); // 카메라가 벽에 막혀 가까워지면 덜 올려다봄
+    if (me && ROOMS.editing) { const rb = roomBox(roomAt(me.x, me.z) || 1); camera.position.set(rb.cx, 21, rb.cz + 5.5); camera.lookAt(rb.cx, 0, rb.cz + 2.6); } // 방 꾸미기 중엔 위에서 방 전체를 내려다봄 (천장은 아래만 보이는 판이라 위에선 안 보임)
     const fc = window.__village?.freeCam; if (fc) { camera.position.set(...fc.pos); camera.lookAt(...fc.look); } // 시험용 자유 시점 (스크린샷)
     atmo.follow(camT.x, camT.y, camT.z);
   }
@@ -843,7 +870,7 @@ const frameFn = (fixedDt) => {
       Object.assign(p, { x: r.x, z: r.z, tx: r.x, tz: r.z, gy: r.y, walking: r.walking });
       if (r.walking) p.tr = p.ry = pt.ez > pt.z ? 0 : Math.PI;
       if (u >= 1) { p.fl = to; p.transit = null; }
-    } else if (!p.ride) p.gy = lerp(p.gy, p.fl * FLOOR_H + floorY(p.x, p.z), k); // 계단·축대 위로 오르내림 (놀이기구 탄 사람은 rides.js 가 높이를 정함)
+    } else if (!p.ride) p.gy = lerp(p.gy, p.fl * FLOOR_H + floorY(p.x, p.z) + (p.pose ? p.rh || 0 : 0), k); // 계단·축대 위로 오르내림 (놀이기구 탄 사람은 rides.js 가 높이를 정함)
     if (p !== me) {
       p.x = lerp(p.x, p.tx, k); p.z = lerp(p.z, p.tz, k); p.ry = lerpAng(p.ry, p.tr, k);
       p.walking = Math.hypot(p.tx - p.x, p.tz - p.z) > 0.05;
@@ -877,6 +904,11 @@ const frameFn = (fixedDt) => {
 
   MG.update(dt, T, camera);
   FISH.update(dt, T);
+  SHOP.update(dt, ['#sitq', '#rtq', '#fsq', '#rdq', '#fwq'].some((id) => !$(id).hidden) || MG.active()); // 다른 안내가 떠 있으면 가게 카드는 쉼
+  HOUSE_UI.update(dt, ['#sitq', '#rtq', '#fsq', '#rdq', '#fwq'].some((id) => !$(id).hidden) || MG.active()); // 다른 안내가 떠 있으면 가게 카드는 쉼
+  ROOMS.update(dt, ['#sitq', '#rtq', '#fsq', '#rdq', '#fwq', '#shq', '#clq', '#hsq'].some((id) => $(id) && !$(id).hidden) || MG.active());
+  DIST.update(dt, camera);
+  CLOTH.update(dt, ['#sitq', '#rtq', '#fsq', '#rdq', '#fwq'].some((id) => !$(id).hidden) || MG.active()); // 다른 안내가 떠 있으면 가게 카드는 쉼
   RIT.update(dt);
   CMP.update(dt);
   FF.update(dt, camera, renderer, atmo.state.night);
@@ -903,4 +935,4 @@ function perfTick(raw, t0) {
   if (perf.acc < 1) return;
   Object.assign(perf, { fps: +(perf.n / perf.acc).toFixed(1), ms: +((perf.acc / perf.n) * 1000).toFixed(1), cpu: +(perf.cpuAcc / perf.n).toFixed(2), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, n: 0, acc: 0, cpuAcc: 0 });
 }
-window.__village = { stepFrame: (dt) => { capturing = true; frameFn(dt); }, setCamHook: (f) => { camHook = f; }, setShowT: (t) => { showT = t; }, applyShow, PSHOW, SHOWA, players, get me() { return me; }, get auto() { return auto; }, autoWalk, map: MAP, bgm: BGM, fx: FX, fireflies: FF, camera, scene, renderer, post, quality: Q, perf, atmo, makeClock, cam: (y, p = pitch, d = dist) => { yaw = y; pitch = p; dist = d; tween = null; } }; // 시험·디버깅용 (cam = 시점 돌리기)
+window.__village = { SHOP, CLOTH, DIST, HOUSE_UI, ROOMS, stepFrame: (dt) => { capturing = true; frameFn(dt); }, setCamHook: (f) => { camHook = f; }, setShowT: (t) => { showT = t; }, applyShow, PSHOW, SHOWA, players, get me() { return me; }, get auto() { return auto; }, autoWalk, map: MAP, bgm: BGM, fx: FX, fireflies: FF, camera, scene, renderer, post, quality: Q, perf, atmo, makeClock, cam: (y, p = pitch, d = dist) => { yaw = y; pitch = p; dist = d; tween = null; } }; // 시험·디버깅용 (cam = 시점 돌리기)

@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node test.mjs && node test-world.mjs && node test-casino.mjs && node test-blackjack.mjs && node test-holdem.mjs && node test-visual.mjs && node test-daycycle.mjs && node test-sacred.mjs && node test-fishing.mjs && node test-rituals.mjs && node test-minimap.mjs && node test-camp.mjs && node test-bots.mjs && node test-stick.mjs && node test-park.mjs && node test-bridge.mjs && node test-show.mjs && node test-showscript.mjs && node test-rides.mjs && node test-zoo.mjs && node test-pathfind.mjs && node test-guest.mjs && node test-audio.mjs && node test-pose.mjs",
+    "test": "node test.mjs && node test-world.mjs && node test-casino.mjs && node test-blackjack.mjs && node test-holdem.mjs && node test-visual.mjs && node test-daycycle.mjs && node test-sacred.mjs && node test-fishing.mjs && node test-shop.mjs && node test-closet.mjs && node test-house.mjs && node test-houseassign.mjs && node test-room.mjs && node test-rituals.mjs && node test-minimap.mjs && node test-camp.mjs && node test-bots.mjs && node test-stick.mjs && node test-park.mjs && node test-bridge.mjs && node test-show.mjs && node test-showscript.mjs && node test-rides.mjs && node test-zoo.mjs && node test-pathfind.mjs && node test-guest.mjs && node test-audio.mjs && node test-pose.mjs",
     "start": "node server.js"
   },
   "keywords": [],

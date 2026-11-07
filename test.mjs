@@ -68,8 +68,8 @@ const li = await api('login', { nick: '모모', pw: 'secret1' });
 assert.ok(li.ok && li.token !== su.token);
 assert.equal((await api('me', { token: li.token })).nick, '모모');
 assert.equal((await api('me', { token: 'x'.repeat(64) })).status, 401);
-const sv = await api('avatar', { token: li.token, avatar: { g: 'f', hs: 99, ey: 'x', sk: 5, os: 4 } });
-assert.deepEqual([sv.avatar.hs, sv.avatar.ey, sv.avatar.sk, sv.avatar.os, sv.avatar.g], [2, 0, 5, 4, 'f'], '이상한 값은 기본값, 나머지는 저장');
+const sv = await api('avatar', { token: li.token, avatar: { g: 'f', hs: 99, ey: 'x', sk: 5, os: 2 } }); // 옷 스타일 2(원피스)는 무료 — 유료 옷(멜빵바지 등)은 옷 가게에서 사야 입을 수 있음(test-closet.mjs)
+assert.deepEqual([sv.avatar.hs, sv.avatar.ey, sv.avatar.sk, sv.avatar.os, sv.avatar.g], [2, 0, 5, 2, 'f'], '이상한 값은 기본값, 나머지는 저장');
 assert.equal((await api('me', { token: su.token })).avatar.sk, 5, '다른 로그인에서도 같은 아바타');
 assert.equal((await api('avatar', { token: 'nope', avatar: {} })).status, 401);
 const stored = JSON.stringify(await store.get('user:모모'));
@@ -95,7 +95,7 @@ assert.equal(last.status, 429, '로그인 시도 횟수 제한');
   assert.ok(inbox.some((m) => m.t === 'auth') && !inbox.some((m) => m.t === 'welcome'), '아바타 없으면 입장 거절'); ws.close(); }
 
 // ── 접속·귓속말
-const a = await open('가나', { hs: 3, os: 1, ac: 2 }), b = await open('다라', { g: 'm', hs: 0 }), c = await open('마바', {});
+const a = await open('가나', { hs: 3, os: 0, ac: 0 }), b = await open('다라', { g: 'm', hs: 0 }), c = await open('마바', {});
 await until(() => b.get('join').length >= 0 && c.get('welcome')[0]);
 assert.equal(a.get('welcome')[0].players.length, 1);
 assert.equal(b.get('welcome')[0].players.find((p) => p.name === '가나').a.hs, 3, '다른 사람 아바타 옵션이 전달됨');

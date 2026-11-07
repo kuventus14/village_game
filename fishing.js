@@ -12,7 +12,7 @@ export function pickFish(r) {
 // 크기(cm): 작은 쪽이 더 흔함. 쓰레기는 0
 export const fishSize = (f, r) => (f.max ? Math.round((f.min + (f.max - f.min) * r ** 1.6) * 10) / 10 : 0);
 
-/* ctx: { now(), rand(), send(p, o), bcast(o), info(p) (상태 알림), save(p) (도감 저장), opts: { bite:[최소,최대]ms, win, slack, minReact, cd } } */
+/* ctx: { now(), rand(), send(p, o), bcast(o), info(p) (상태 알림), save(p) (도감 저장), onCatch?(p, fish) (가방에 담기), opts: { bite:[최소,최대]ms, win, slack, minReact, cd } } */
 export function createFishing(ctx) {
   const o = { bite: [2500, 7000], win: REEL_MS, slack: 300, minReact: 80, cd: 800, ...ctx.opts };
   const fishers = new Set();
@@ -51,7 +51,7 @@ export function createFishing(ctx) {
     if (dt > o.win + o.slack) return end(p, 'miss');
     const fish = pickFish(ctx.rand()), cm = fishSize(fish, ctx.rand());
     const was = p.dex[fish.k], e = (p.dex[fish.k] = { n: (was?.n || 0) + 1, best: Math.max(was?.best || 0, cm) });
-    ctx.save(p);
+    ctx.save(p); ctx.onCatch?.(p, fish); // 가방에 담기(물고기 가게)
     ctx.send(p, { t: 'fish', a: 'catch', k: fish.k, cm, first: !was, record: !!was && cm > was.best, e });
     end(p, 'catch', { k: fish.k, cm });
   }

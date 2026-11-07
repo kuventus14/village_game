@@ -1,4 +1,10 @@
 // 서버와 브라우저가 같이 쓰는 마을 설계도: 건물·가구·충돌·구역·상태 목록
+import { FISH_STALL } from './shopdata.js';
+import { CLOSET_STALL } from './closet.js';
+import { roomAt, resolveRoom, FURN_STALL } from './roomdata.js';
+export { roomAt, roomBox, ROOM, FURN_STALL } from './roomdata.js';
+import { NORTH_GATE, HOUSE_RECTS, districtDist, districtWalk, inDistrict, GATE_ROAD, DISTRICT, ENTRY } from './housedata.js';
+export { NORTH_GATE, HOUSE_RECTS, districtDist, districtWalk, inDistrict, PLOTS, STREETS, HOUSING, setOpenAvenues, openAvenues, isOpen, openZ0, plotAt, plotById, GATE_ROAD, DISTRICT, ENTRY } from './housedata.js'; // 주택 단지 (housedata.js, 설계 docs/HOUSING.md)
 import { CAMP_TOWN_PATH, FIRE, CLEAR_R, CAMP_SEATS, CAMP_CIRCLES, inClearing, campNear, campDist, campWalk } from './campdata.js';
 export * from './campdata.js'; // 불멍 캠프 (아래 '불멍 캠프' 묶음 두 곳)
 import { PARK, PARK_TOWN_PATH, PARK_RECTS, PARK_CIRCLES, PARK_BENCHES, inPark, inZoo, parkRoadNear, parkDist, parkWalk, bridgeH, lakeEdge, GATE_WALL } from './parkdata.js';
@@ -94,7 +100,7 @@ export const SIT_TEXT = { cafe: '☕ 커피 마시는 중', office: '💻 일하
 export const AUTO = { office: 'working', cafe: 'coffee' }; // 건물에 들어가면 '한가해요' 에서 자동으로 바뀜
 // 성당·사찰·교회 이름표 (docs/SACRED.md). 이름을 바꿀 땐 여기 한 곳만
 export const SACRED = { cathedral: { name: '성당', icon: '⛪' }, temple: { name: '사찰', icon: '🛕' }, church: { name: '교회', icon: '⛪' } };
-export const PLACE = { town: ['🌳', '마을'], cafe: ['☕', '카페'], office: ['🏢', '회사'], casino: ['🎰', '카지노'], trail: ['🌲', '숲길'], ...Object.fromEntries(Object.entries(SACRED).map(([k, s]) => [k, [s.icon, s.name]])), park: ['🎡', '놀이공원'], zoo: ['🦒', '동물원'] };
+export const PLACE = { town: ['🌳', '마을'], cafe: ['☕', '카페'], office: ['🏢', '회사'], casino: ['🎰', '카지노'], trail: ['🌲', '숲길'], ...Object.fromEntries(Object.entries(SACRED).map(([k, s]) => [k, [s.icon, s.name]])), park: ['🎡', '놀이공원'], zoo: ['🦒', '동물원'], district: ['🏡', '주택 단지'], room: ['🏠', '집 안'] };
 
 // 성당·교회·사찰은 아래 '설계도 → 3배' 에서 더함 (fy = 바닥 높이)
 export const BUILDINGS = {
@@ -102,13 +108,7 @@ export const BUILDINGS = {
   office: { cx: 22, cz: -6, w: 15, d: 12, door: '-x', dw: 3.8, h: 4.2 },
   casino: { cx: 36, cz: 31, w: 14, d: 14, door: '-z', dw: 4, h: 13 }, // 3층: 층 높이 FLOOR_H
 };
-export const HOUSES = [
-  { x: -32, z: -26, w: 7, d: 6, c: '#ffc9d4', r: '#ef6f6c' },
-  { x: -17, z: -29, w: 7, d: 6, c: '#c9e7ff', r: '#5a8fd6' },
-  { x: 0, z: -30, w: 8, d: 6, c: '#fff0b3', r: '#f08c3a' },
-  { x: 17, z: -29, w: 7, d: 6, c: '#d4f5d0', r: '#4fa66a' },
-  { x: 32, z: -26, w: 7, d: 6, c: '#e5d4ff', r: '#8a63d2' },
-];
+export const HOUSES = []; // 마을 북쪽의 옛 집 5채는 없앰 — 집은 주택 단지(housedata.js)에만 있음. 목록을 쓰는 곳(그림·충돌·길·굴뚝 연기)은 빈 목록으로 그대로 동작
 export const FOUNTAIN = { x: 0, z: 0, r: 2.7 };
 export const POND = { x: 22, z: 21, r: 5 };
 
@@ -136,8 +136,10 @@ export const doorPos = (b) => {
 export const inside = (b, x, z) => Math.abs(x - b.cx) < b.w / 2 - 0.15 && Math.abs(z - b.cz) < b.d / 2 - 0.15;
 // 들어가 있는 건물 → 사찰 마당 → 숲길 → 마을 (사찰 마당은 마을 밖이라 '사찰'로 셈)
 export const placeOf = (x, z) => {
+  if (roomAt(x, z)) return 'room'; // 집 안(방): 월드 먼 곳 (roomdata.js)
   for (const k of ['cafe', 'office', 'casino', 'cathedral', 'church', 'temple']) if (inside(BUILDINGS[k], x, z)) return k;
   if (inTown(x, z)) return 'town';
+  if (z < -BZ && districtDist(x, z) <= 0.5) return 'district'; // 북쪽 주택 단지(대문 길·입구 광장·큰길 구역)
   if (inYard(x, z, 0)) return 'temple';
   if (inClearing(x, z)) return 'camp';
   if (x < -BX) { if (inPark(x, z)) return inZoo(x, z) ? 'zoo' : 'park'; const r = parkRoadNear(x, z); if (r.d <= r.hw + 0.5) return 'park'; } // 놀이공원 부지·가는 길 (동물원 구역은 'zoo')
@@ -460,6 +462,9 @@ export const FLOWERS = Array.from({ length: 260 }, () => {
   const P = PARK_TOWN_PATH, seg = (x, z) => { let b = null; for (let i = 1; i < P.length; i++) { const [a, c] = [P[i - 1], P[i]], ex = c[0] - a[0], ez = c[1] - a[1], u = Math.max(0, Math.min(1, ((x - a[0]) * ex + (z - a[1]) * ez) / (ex * ex + ez * ez))), px = a[0] + ex * u, pz = a[1] + ez * u, d = Math.hypot(x - px, z - pz); if (!b || d < b.d) b = { d, px, pz }; } return b; };
   for (const t of TREES) { const s = seg(t.x, t.z); if (s.d < 3.6) nudge(t, 3.6, s.px, s.pz); }
   for (let i = FLOWERS.length - 1; i >= 0; i--) if (seg(FLOWERS[i].x, FLOWERS[i].z).d < 2.4) FLOWERS.splice(i, 1);
+  for (const t of DECOR_TREES) { // 북쪽 주택 단지·대문 길 위 풍경 나무는 단지 밖으로 (지우지 않고 옮김)
+    if (t.z < -BZ + 4 && districtDist(t.x, t.z) < 6) { if (Math.abs(t.x) < DISTRICT.x1 - 8 && t.z > DISTRICT.z1) t.x = (t.x < 0 ? -1 : 1) * (GATE_ROAD.hw + 6); else t.x = (t.x < 0 ? DISTRICT.x0 - 6 : DISTRICT.x1 + 6); }
+  }
   for (const t of DECOR_TREES) {
     if (parkDist(t.x, t.z) >= 6) continue;
     if (inPark(t.x, t.z, -6)) { // 부지 안·가장자리 → 가장 가까운 울타리 밖 6m
@@ -527,6 +532,7 @@ export const RECTS = [
   ...HOUSES.map((h) => [h.x - h.w / 2, h.z - h.d / 2, h.x + h.w / 2, h.z + h.d / 2]),
   ...FURN.filter((f) => f.w).map((f) => [f.x - f.w / 2, f.z - f.d / 2, f.x + f.w / 2, f.z + f.d / 2]),
   ...fenceRects(TAG), ...fenceRects(DODGE), ...TAG_HEDGES, ...TAG_CRATES,
+  ...HOUSE_RECTS, // 주택 단지 집 발자국
 ];
 export const CIRCLES = [
   FOUNTAIN, { x: POND.x, z: POND.z, r: POND.r + 0.3 },
@@ -535,11 +541,15 @@ export const CIRCLES = [
   ...FURN.filter((f) => f.r).map((f) => ({ x: f.x, z: f.z, r: f.r })),
   ...TREES.map((t) => ({ x: t.x, z: t.z, r: 0.5 })),
   ...TAG_PILLARS,
+  { x: FISH_STALL.x, z: FISH_STALL.z, r: FISH_STALL.r }, // 물고기 가게 (연못 동쪽, shopdata.js)
+  { x: CLOSET_STALL.x, z: CLOSET_STALL.z, r: CLOSET_STALL.r }, // 옷 가게 (광장 남서쪽, closet.js)
+  { x: FURN_STALL.x, z: FURN_STALL.z, r: FURN_STALL.r }, // 가구 백화점 (광장 동남쪽, roomdata.js)
 ];
 
 // 사람 반지름 r 이 벽·물건 안으로 못 들어가게 밀어냄
 export function resolve(x, z, r = 0.4, fl = 0) {
-  if (x < -BX - 1.5) return resolvePark(x, z, r); // 마을 서쪽 밖(놀이공원 길·부지)엔 마을 물건이 없음 → 공원 충돌만 봄
+  const room = roomAt(x, z); if (room) return resolveRoom(room, x, z, r); // 집 안: 벽·가구만 봄
+  if (x < -BX - 1.5 && !(z < -BZ && x >= DISTRICT.x0 - 2)) return resolvePark(x, z, r); // (북쪽 주택 단지는 마을 쪽 계산을 씀) // 마을 서쪽 밖(놀이공원 길·부지)엔 마을 물건이 없음 → 공원 충돌만 봄
   const rects = fl ? [...RECTS, ...FL_RECTS[fl]] : [...RECTS, ...FL_RECTS[0]];
   for (let i = 0; i < 3; i++) {
     for (const [x0, z0, x1, z1] of rects) {
@@ -584,13 +594,14 @@ function walkable(x, z) {
   const B = BX - 0.6, BB = BZ - 0.6;
   if (Math.abs(x) <= B && Math.abs(z) <= BB) return [x, z];
   if (inYard(x, z)) return [x, z];
+  const dw = districtWalk(x, z); if (!dw) return [x, z]; // 북쪽 주택 단지(대문 길·입구 광장·열린 큰길 구역)
   const pw = parkWalk(x, z); if (!pw) return [x, z]; // 포근 놀이공원 길·부지
   const cw = campWalk(x, z); if (!cw) return [x, z]; // 불멍 캠프 길·공터
   const t = trailNear(x, z), w = t.hw - 0.5;
   if (t.d <= w) return [x, z];
   const k = w / t.d, YB = [TY.w / 2 - 0.5, TY.d / 2 - 0.5];
   const cand = [[Math.max(-B, Math.min(B, x)), Math.max(-BB, Math.min(BB, z))], [t.px + (x - t.px) * k, t.pz + (z - t.pz) * k],
-    [TY.cx + Math.max(-YB[0], Math.min(YB[0], x - TY.cx)), TY.cz + Math.max(-YB[1], Math.min(YB[1], z - TY.cz))], ...cw, ...pw];
+    [TY.cx + Math.max(-YB[0], Math.min(YB[0], x - TY.cx)), TY.cz + Math.max(-YB[1], Math.min(YB[1], z - TY.cz))], ...cw, ...pw, ...dw];
   return cand.reduce((a, c) => (Math.hypot(c[0] - x, c[1] - z) < Math.hypot(a[0] - x, a[1] - z) ? c : a));
 }
 

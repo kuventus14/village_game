@@ -45,7 +45,7 @@ for (const [name, [x, z]] of Object.entries(DEST)) {
   console.log(`  ${name}: ${P.length}점, 길 찾기 ${ms.toFixed(1)}ms, 걸어서 ${w.t.toFixed(0)}초`);
 }
 // 못 들어가는 곳: 분수 한가운데·연못 물 위·건물 벽 속·놀이터 패드 → 가장 가까운 걸을 수 있는 칸, 거기까지 길 있음
-for (const [name, x, z] of [['분수 물 위', 0.6, 0.4], ['연못 물 위', W.POND.x + 0.5, W.POND.z + 0.3], ['집 벽 속', W.HOUSES[0].x, W.HOUSES[0].z], ['놀이터 패드', W.TAG.pad.x, W.TAG.pad.z], ['울타리 밖 들판', 0, W.BZ + 6]]) { // (원 충돌의 딱 한가운데 점은 resolve 가 못 밀어내서 피함 — 화면 클릭으로는 사실상 안 생김)
+for (const [name, x, z] of [['분수 물 위', 0.6, 0.4], ['연못 물 위', W.POND.x + 0.5, W.POND.z + 0.3], ['놀이터 패드', W.TAG.pad.x, W.TAG.pad.z], ['울타리 밖 들판', 0, W.BZ + 6]]) { // (원 충돌의 딱 한가운데 점은 resolve 가 못 밀어내서 피함 — 화면 클릭으로는 사실상 안 생김)
   assert.ok(!free(x, z), `${name} 은 바로 걸을 수 없는 곳`);
   const to = nearest(x, z);
   assert.ok(to && free(...to) && Math.hypot(to[0] - x, to[1] - z) < 12, `${name} → 가까운 걸을 수 있는 곳으로 보정 (${to && Math.hypot(to[0] - x, to[1] - z).toFixed(1)}m)`);

@@ -1,6 +1,6 @@
 // 마을 소품: 장식 집 5채(박공지붕·창·덧문·화분·굴뚝·우편함), 가로등, 벤치, 울타리, 이정표. 재질별로 합쳐 그리기 호출을 줄임
 import * as THREE from 'three';
-import { BX, BZ, HOUSES, LAMPS, BENCHES, BENCHES2, GATE, CAMP_GATE, VILLAGE_GATE_W } from './world.js';
+import { BX, BZ, HOUSES, LAMPS, BENCHES, BENCHES2, GATE, CAMP_GATE, VILLAGE_GATE_W, NORTH_GATE } from './world.js';
 import { soft, Batch, boxUV, instanced, place, patch, nightGlow, rng, U } from './gfx.js';
 import { woodTex, sidingTex, shingleTex, stoneTex, brickTex } from './textures.js';
 
@@ -125,7 +125,7 @@ export function createTown(scene) {
   const w0 = VILLAGE_GATE_W.z - VILLAGE_GATE_W.hw, w1 = VILLAGE_GATE_W.z + VILLAGE_GATE_W.hw;
   for (const y of [0.42, 0.85]) {
     const c0 = CAMP_GATE.x - CAMP_GATE.hw, c1 = CAMP_GATE.x + CAMP_GATE.hw; // 남쪽 대문(불멍 캠프 숲길)도 비움
-    for (const [x, z, len, rx] of [[0, -BZ, BX * 2, 0], [(c1 + BX) / 2, BZ, BX - c1, 0], [(-BX + c0) / 2, BZ, c0 + BX, 0]]) B.add('wood', boxUV(len, 0.12, 0.07, 1.5), { pos: [x, y, z], rot: [0, rx * Math.PI / 2, 0], color: '#fff3e2' });
+    for (const [x, z, len, rx] of [[(NORTH_GATE.x + NORTH_GATE.hw - BX) / 2, -BZ, BX - NORTH_GATE.hw - NORTH_GATE.x, 0], [(NORTH_GATE.x - NORTH_GATE.hw + BX) / 2, -BZ, BX - NORTH_GATE.hw + NORTH_GATE.x, 0], [(c1 + BX) / 2, BZ, BX - c1, 0], [(-BX + c0) / 2, BZ, c0 + BX, 0]]) B.add('wood', boxUV(len, 0.12, 0.07, 1.5), { pos: [x, y, z], rot: [0, rx * Math.PI / 2, 0], color: '#fff3e2' });
     for (const [a, b] of [[-BZ, g0], [g1, BZ]]) B.add('wood', boxUV(b - a, 0.12, 0.07, 1.5), { pos: [BX, y, (a + b) / 2], rot: [0, Math.PI / 2, 0], color: '#fff3e2' });
     for (const [a, b] of [[-BZ, w0], [w1, BZ]]) B.add('wood', boxUV(b - a, 0.12, 0.07, 1.5), { pos: [-BX, y, (a + b) / 2], rot: [0, Math.PI / 2, 0], color: '#fff3e2' }); // 서쪽 대문(놀이공원 길)도 비움
   }
@@ -147,7 +147,7 @@ export function createTown(scene) {
   // 울타리 기둥: 둥근 머리
   const post = new Batch().add('p', boxUV(0.2, 1.1, 0.2, 0.6), { pos: [0, 0.55, 0], color: '#fff6e6' }).add('p', new THREE.SphereGeometry(0.14, 8, 3, 0, Math.PI * 2, 0, Math.PI / 2), { pos: [0, 1.1, 0], color: '#fff6e6' }).geometry('p');
   const posts = [];
-  for (let s = -BX; s <= BX + 0.01; s += 4) { posts.push({ x: s, z: -BZ }); if (Math.abs(s - CAMP_GATE.x) > CAMP_GATE.hw) posts.push({ x: s, z: BZ }); }
+  for (let s = -BX; s <= BX + 0.01; s += 4) { if (Math.abs(s - NORTH_GATE.x) > NORTH_GATE.hw) posts.push({ x: s, z: -BZ }); if (Math.abs(s - CAMP_GATE.x) > CAMP_GATE.hw) posts.push({ x: s, z: BZ }); }
   for (let s = -BZ; s <= BZ + 0.01; s += BZ / 16) { if (s < w0 - 0.1 || s > w1 + 0.1) posts.push({ x: -BX, z: s }); if (s < g0 - 0.1 || s > g1 + 0.1) posts.push({ x: BX, z: s }); }
   instanced(scene, post, soft('#ffffff', { vertexColors: true, map: woodTex() }), posts, { cast: true });
   return { chimneys, meshes };

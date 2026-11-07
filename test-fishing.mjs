@@ -1,5 +1,17 @@
 // 낚시 시험: 확률표·뽑기, 가짜 시계로 입질·당기기 판정, 서버 통합(거리 검사·입질·성공/늦음/빠름·이동 취소·도감 저장과 재접속)
 import assert from 'node:assert/strict';
+// 판매 값: 물고기 500~5000 칩, 희귀할수록 비쌈(희귀도 단계가 오르면 값도 오름), 쓰레기는 0(못 팖), 한 번 낚을 때 평균(쓰레기 포함)
+import { FISH as FISH_PRICES } from './public/fishdata.js';
+{
+  const fish = FISH_PRICES.filter((f) => f.star > 0), junk = FISH_PRICES.filter((f) => f.star === 0);
+  assert.ok(fish.every((f) => Number.isInteger(f.price) && f.price >= 500 && f.price <= 5000), '물고기 값 500~5000');
+  assert.ok(junk.every((f) => f.price === 0), '쓰레기는 못 팖');
+  for (const a of fish) for (const b of fish) if (b.star > a.star) assert.ok(b.price >= a.price, `${b.name}(${b.star}) 이 ${a.name}(${a.star}) 보다 싸면 안 됨`);
+  const ev = FISH_PRICES.reduce((t, f) => t + (f.p / 100) * f.price, 0);
+  assert.ok(ev > 900 && ev < 1200, '한 번 낚을 때 평균 약 1,050칩: ' + ev.toFixed(0));
+  console.log(`ok 물고기 값: ${fish.map((f) => f.name + ' ' + f.price).join(' · ')} (한 번 낚을 때 평균 ${ev.toFixed(0)}칩)`);
+}
+
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

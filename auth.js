@@ -1,4 +1,5 @@
 // 가입·로그인·아바타 저장. 비밀번호는 scrypt 로 암호화해서 저장하고, 로그인 토큰은 해시만 저장함.
+import { ownedWith, wearable } from './public/closet.js';
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { cleanAvatar } from './public/world.js';
@@ -35,7 +36,7 @@ export function createAuth(store, { reserved = () => false } = {}) { // reserved
     const user = await store.get(userKey(id));
     return user ? { id: String(id).toLowerCase(), nick: user.nick, user } : null;
   }
-  const info = (u) => ({ id: u.id ?? u.nick, nick: u.nick, avatar: u.avatar });
+  const info = (u) => ({ id: u.id ?? u.nick, nick: u.nick, avatar: u.avatar, closet: ownedWith(u.closet, u.avatar) }); // closet: 산 옷(+지금 입은 옷)
 
   const actions = {
     async signup({ id, nick, pw }) { // id 없이 보내면(옛 방식·스크립트) 닉네임이 아이디를 겸함
@@ -66,7 +67,9 @@ export function createAuth(store, { reserved = () => false } = {}) { // reserved
     async avatar({ token, avatar }) {
       const m = await me(token);
       if (!m) return [401, E.login];
-      m.user.avatar = cleanAvatar(avatar);
+      const next = cleanAvatar(avatar), owned = ownedWith(m.user.closet, m.user.avatar); // 지금 입고 있던 유료 옷은 계속 입을 수 있음(예전 계정 보호)
+      if (!wearable(next, owned)) return [400, '아직 안 산 옷이에요 · 마을 광장의 옷 가게에서 살 수 있어요'];
+      m.user.closet = owned; m.user.avatar = next;
       await store.set(userKey(m.id), m.user);
       return [200, info(m.user)];
     },
@@ -103,11 +106,29 @@ export function createAuth(store, { reserved = () => false } = {}) { // reserved
     u.fish = fish;
     await store.set(userKey(id), u);
   }
+  async function saveShop(id, shop) { // 물고기 가방·오늘 판 수 저장: { bag: { 물고기키: 마리 수 }, day: 한국 날짜 번호, sold: 그날 판 마리 수 }
+    const u = await store.get(userKey(id));
+    if (!u) return;
+    u.shop = shop;
+    await store.set(userKey(id), u);
+  }
+  async function saveCloset(id, closet) { // 산 옷·꾸미기 목록 저장: ['os3', 'ac2', …]
+    const u = await store.get(userKey(id));
+    if (!u) return;
+    u.closet = closet;
+    await store.set(userKey(id), u);
+  }
+  async function saveHouse(id, house) { // 내 집 저장: { plot: 집터 번호, roof: 지붕 색 번호, name: 문패 }
+    const u = await store.get(userKey(id));
+    if (!u) return;
+    u.house = house;
+    await store.set(userKey(id), u);
+  }
   async function saveSacred(id, rec) { // 성당·사찰·교회 기록 저장: { bows, beads, candles, rosaries, sung, played, ritual, day, today }
     const u = await store.get(userKey(id));
     if (!u) return;
     u.sacred = rec;
     await store.set(userKey(id), u);
   }
-  return { handle, me, saveChips, saveFish, saveSacred, nickTaken };
+  return { handle, me, saveChips, saveFish, saveShop, saveCloset, saveHouse, saveSacred, nickTaken };
 }

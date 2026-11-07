@@ -1,6 +1,6 @@
 // 땅(길·광장이 섞이는 셰이더)·언덕·잔디 뭉치·나무 4종·덤불·바위·꽃·버섯
 import * as THREE from 'three';
-import { BOUND, BX, BZ, inTown, BUILDINGS, HOUSES, TREES, DECOR_TREES, FLOWERS, LAMPS, BENCHES, BENCHES2, POND, TAG, DODGE, SACRED_YARDS, SACRED_BOXES, GATE_PATH, trailNear, doorPos, sideNormal, CAMP_TOWN_PATH, CAMP_GATE, campDist, PARK_TOWN_PATH, VILLAGE_GATE_W, parkDist, lakeD } from './world.js';
+import { BOUND, BX, BZ, inTown, BUILDINGS, HOUSES, TREES, DECOR_TREES, FLOWERS, LAMPS, BENCHES, BENCHES2, POND, TAG, DODGE, SACRED_YARDS, SACRED_BOXES, GATE_PATH, trailNear, doorPos, sideNormal, CAMP_TOWN_PATH, CAMP_GATE, campDist, PARK_TOWN_PATH, VILLAGE_GATE_W, parkDist, lakeD, districtDist } from './world.js';
 import { soft, patch, sway, paint, lumpy, Batch, instanced, rng, noise, groundH, NEAR_FADE, U } from './gfx.js';
 import { grassTex, dirtTex, cobbleTex, petalsTex, blobTex } from './textures.js';
 
@@ -227,7 +227,7 @@ function makeGrass(scene, free, n) {
   const list = [];
   for (let i = 0; i < n * 8 && list.length < n; i++) {
     const out = R() < 0.18, x = (R() * 2 - 1) * (out ? BX + 28 : BX - 0.5), z = (R() * 2 - 1) * (out ? BZ + 28 : BZ - 0.5);
-    if (out && (inTown(x, z, -1) || trailNear(x, z).d < 4.2 || campDist(x, z) < 4.6 || parkDist(x, z) < 1 || lakeD(x, z) < 2.5)) continue;
+    if (out && (inTown(x, z, -1) || trailNear(x, z).d < 4.2 || campDist(x, z) < 4.6 || parkDist(x, z) < 1 || lakeD(x, z) < 2.5 || districtDist(x, z) < 2)) continue;
     if (!out && Math.abs(x) > BOUND + 2 && R() > 0.3) continue; // 넓어진 땅은 예전 마을보다 성기게
     if (noise(x * 0.11 + 4, z * 0.11) < 0.38 && R() > 0.2) continue; // 군데군데 뭉쳐 나게
     if (!out && !free(x, z, 0.15)) continue;
@@ -261,7 +261,7 @@ function makeBushesRocks(scene, free, trees) {
   const rock = paint(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.2, 1.2, 3), (x, y) => [0.82 + y * 0.18, 0.8 + y * 0.18, 0.84 + y * 0.14]);
   const rl = [], rc = ['#d8d0c8', '#cfc8cf', '#e0d6c6', '#c8c4c0'];
   for (let i = 0; i < 26; i++) { const a = (i / 26) * Math.PI * 2 + R() * 0.15, r = POND.r + 0.05 + R() * 0.3, s = 0.22 + R() * 0.28; rl.push({ x: POND.x + Math.sin(a) * r, y: s * 0.15, z: POND.z + Math.cos(a) * r, sv: [s * 1.3, s * 0.75, s], ry: R() * 6, c: rc[i % 4] }); }
-  for (let i = 0; i < (LITE ? 0 : 70); i++) { const x = (R() * 2 - 1) * (BX + 46), z = (R() * 2 - 1) * (BZ + 46); if (inTown(x, z, -3) || trailNear(x, z).d < 7 || campDist(x, z) < 7 || parkDist(x, z) < 7 || lakeD(x, z) < 4) continue; const s = 0.4 + R() * 1.4; rl.push({ x, y: groundH(x, z) + s * 0.1, z, sv: [s * 1.2, s * 0.8, s], ry: R() * 6, c: rc[i % 4] }); }
+  for (let i = 0; i < (LITE ? 0 : 70); i++) { const x = (R() * 2 - 1) * (BX + 46), z = (R() * 2 - 1) * (BZ + 46); if (inTown(x, z, -3) || trailNear(x, z).d < 7 || campDist(x, z) < 7 || parkDist(x, z) < 7 || lakeD(x, z) < 4 || districtDist(x, z) < 6) continue; const s = 0.4 + R() * 1.4; rl.push({ x, y: groundH(x, z) + s * 0.1, z, sv: [s * 1.2, s * 0.8, s], ry: R() * 6, c: rc[i % 4] }); }
   for (const t of trees.all) if (R() < 0.2 && inTown(t.x, t.z)) { const a = R() * 6.28, x = t.x + Math.sin(a) * 1.1, z = t.z + Math.cos(a) * 1.1, s = 0.15 + R() * 0.15; rl.push({ x, y: 0.02, z, sv: [s * 1.3, s * 0.8, s], ry: R() * 6, c: rc[0] }); }
   instanced(scene, rock, soft('#ffffff', { vertexColors: true }), rl, { cast: true });
   return bl;

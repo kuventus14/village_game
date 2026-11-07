@@ -1,8 +1,8 @@
 // 걷기 격자·길 찾기 (서버 봇 bots.js 와 화면 자동 걸음 pathfind-worker.js 가 같이 씀). world.js 만 씀 → node·브라우저·Web Worker 어디서나 돎
 import { GAMES, resolve, placeOf } from './world.js';
 
-// ───── 걷기 격자: 2m 칸, 마을 가운데서 걸어 닿는 칸만 (한 번 만들어 같이 씀). 서쪽은 놀이공원(x -532)까지, 서쪽 대문으로 이어짐
-const CELL = 2, GX0 = -536, GZ0 = -222, NX = 475, NZ = 220, N = NX * NZ;
+// ───── 걷기 격자: 2m 칸, 마을 가운데서 걸어 닿는 칸만 (한 번 만들어 같이 씀). 서쪽은 놀이공원(x -532)까지, 북쪽은 주택 단지까지(열린 큰길만 닿음 — 큰길이 더 열리면 resetGrid)
+const CELL = 2, GX0 = -536, GZ0 = -560, NX = 475, NZ = 389, N = NX * NZ; // 북쪽은 주택 단지 큰길 E(z -555)까지
 const D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]], OPP = [1, 0, 3, 2, 7, 6, 5, 4];
 const ARENAS = Object.values(GAMES).map((g) => [g.cx - g.hw - 2, g.cz - g.hd - 2, g.cx + g.hw + 2, g.cz + g.hd + 2]);
 // 놀이터 패드(+여유)·경기장 근처는 격자에서 뺌 → 지나가던 봇·자동 걸음이 패드를 밟아 게임이 저절로 시작되지 않음 (게임하러 가는 봇은 마지막 몇 m 를 곧게 걸어 들어감). m = 여유를 줄이는 만큼
@@ -10,6 +10,7 @@ export const banned = (x, z, m = 0) => Object.values(GAMES).some((g) => Math.hyp
 const still = (x, z, r) => { const [a, b] = resolve(x, z, r, 0); return Math.abs(a - x) + Math.abs(b - z) < 0.02; };
 export const free = (x, z) => still(x, z, 0.45) && still(x, z, 0.4) && !banned(x, z); // 실제 걷는 반지름(0.4)으로도 확인 (충돌 모양에 따라 결과가 다를 때가 있음)
 let G = null;
+export const resetGrid = () => { G = null; }; // 주택 단지 큰길이 더 열렸을 때 다시 만들기
 export function grid() {
   if (G) return G;
   const st = new Uint8Array(N), edge = new Uint8Array(N), near = new Uint8Array(N), reach = new Uint8Array(N); // st: 0 모름 1 빈칸 2 막힘

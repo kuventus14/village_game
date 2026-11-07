@@ -1,7 +1,7 @@
 // 바깥 풍경 공용 도우미: 시간 유니폼, 부드러운 재질, 셰이더 덧대기, 지오메트리 합치기, 난수·노이즈, 땅 높이
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { trailNear, streamDist, TEMPLE_YARD, BX, BZ, campDist, parkDist, lakeDepth } from './world.js';
+import { trailNear, streamDist, TEMPLE_YARD, BX, BZ, campDist, parkDist, lakeDepth, districtDist } from './world.js';
 
 // 셰이더들이 같이 쓰는 값: 시간, 밤 정도(0~1), 물에 비치는 하늘색, 해(밤엔 달) 빛 방향 — atmosphere 가 매 프레임 채움
 export const U = { time: { value: 0 }, night: { value: 0 }, flash: { value: new THREE.Color(0, 0, 0) }, // flash: 불꽃놀이 번쩍임 색(호수가 그 색으로 반짝)
@@ -36,7 +36,7 @@ export function groundH(x, z) {
   const d = Math.max(Math.abs(x) - (BX - BZ), Math.abs(z)), r = Math.hypot(x, z); // 울타리(x ±BX, z ±BZ) 에서 잰 거리 + 44
   if (d < BZ + 3) return 0;
   const Y = TEMPLE_YARD, yd = Math.hypot(Math.max(0, Math.abs(x - Y.cx) - Y.w / 2), Math.max(0, Math.abs(z - Y.cz) - Y.d / 2));
-  const flat = Math.min(smooth(25, 60, trailNear(x, z).d), smooth(25, 60, yd), smooth(14, 32, streamDist(x, z)), smooth(25, 60, campDist(x, z)), smooth(25, 60, parkDist(x, z))); // 불멍 캠프 길·공터, 놀이공원 길·부지도 평평
+  const flat = Math.min(smooth(25, 60, trailNear(x, z).d), smooth(25, 60, yd), smooth(14, 32, streamDist(x, z)), smooth(25, 60, campDist(x, z)), smooth(25, 60, parkDist(x, z)), smooth(25, 60, districtDist(x, z))); // 불멍 캠프 길·공터, 놀이공원 길·부지, 주택 단지도 평평
   const ld = x < -BX ? lakeDepth(x, z) : 0; // 놀이공원 가는 길 호수 바닥 (땅을 파냄)
   if (flat <= 0) return -ld;
   return flat * (smooth(BZ + 3, BZ + 36, d) * (0.8 + fbm(x * 0.03, z * 0.03) * 5) + smooth(90, 260, Math.min(r, d + 46)) * fbm(x * 0.008 + 3, z * 0.008) * 34) - ld;

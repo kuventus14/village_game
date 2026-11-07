@@ -1,6 +1,7 @@
 // 지도: 오른쪽 아래 미니맵(나를 따라다니는 반경 70m, 북쪽 위 고정) + 전체 지도(미니맵 누르기·M 키)
 // 그림은 world.js 의 좌표를 그때그때 읽어 그림(건물 크기·위치가 바뀌어도 따라감). 땅·길·건물은 밑그림 한 장에 한 번만 그려 두고, 매번 내 위치만큼 오려 붙인 뒤 이름표·점만 그림
 import * as W from './world.js';
+import { SPINE, STREET_HW } from './housedata.js';
 
 export const VIEW_R = 70; // 미니맵이 보여 주는 반경 (m)
 export const BAKE_S = 3; // 밑그림 해상도 (px/m)
@@ -17,6 +18,7 @@ export function worldBounds() {
   const Y = W.TEMPLE_YARD; add(Y.cx, Y.cz, Y.w / 2 + 8, Y.d / 2 + 8);
   const c = camp(); if (c) add(c.x, c.z, 30);
   const P = W.PARK; if (P) { add(P.x0, P.z0, 14); add(P.x1, P.z1, 14); } // 포근 놀이공원 부지 (+ 둘레 숲)
+  if (W.DISTRICT) { add(W.DISTRICT.x0, W.openZ0(W.HOUSING.open), 8); add(W.DISTRICT.x1, W.DISTRICT.z1, 8); } // 북쪽 주택 단지 (열린 큰길까지, 큰길이 열리면 밑그림을 다시 그림)
   return [x0, z0, x1, z1];
 }
 // 보기 = 가운데(cx,cz) · 배율 k(px/m) · 크기 w×h(px). 지도 x = 월드 x, 지도 아래 = 월드 +z (북쪽 -z 가 위)
@@ -38,6 +40,7 @@ export function labels() {
   const B = W.BUILDINGS, out = [], add = (x, z, icon, text, pri) => out.push({ x, z, icon, text, pri });
   for (const k of ['temple', 'cathedral', 'church', 'casino', 'cafe', 'office']) if (B[k] && W.PLACE[k]) add(B[k].cx, B[k].cz, ...W.PLACE[k], 1);
   const c = camp(); if (c) add(c.x, c.z, '🔥', '캠프', 1);
+  if (W.ENTRY) add(W.ENTRY.x, W.ENTRY.z, ...W.PLACE.district, 1);
   if (W.PARK) { const P = W.PROMENADE; add((P.x0 + P.x1) / 2, P.z, ...W.PLACE.park, 1); add(W.ZOO_ARCH.x, (W.ZOO_ZONE.z0 + W.ZOO_ZONE.z1) / 2, ...W.PLACE.zoo, 1); add(W.PARK_GATE.x + 10, W.PARK_GATE.z, '🏰', '정문', 2); for (const s of Object.values(W.RIDE_SLOTS)) if (s.id !== 'train') add(s.x, s.z, { ferris: '🎡', carousel: '🎠', coaster: '🎢', viking: '🏴‍☠️', bumper: '🚗', teacups: '☕', swing: '🌼', drop: '🗼', flume: '🛶' }[s.id], s.name, 4); }
   add(W.FOUNTAIN.x, W.FOUNTAIN.z, '⛲', '광장', 2);
   add(W.GATE.x, W.GATE.z, '🚪', '대문', 2);
@@ -84,6 +87,13 @@ function bake(paths) {
   const g0 = W.GATE.z - W.GATE.hw, g1 = W.GATE.z + W.GATE.hw;
   const V = W.VILLAGE_GATE_W, w0 = V ? V.z - V.hw : 0, w1 = V ? V.z + V.hw : 0; // 서쪽 대문(놀이공원)도 뚫림
   for (const pts of V ? [[[W.BX, g0], [W.BX, -W.BZ], [-W.BX, -W.BZ], [-W.BX, w0]], [[-W.BX, w1], [-W.BX, W.BZ], [W.BX, W.BZ], [W.BX, g1]]] : [[[W.BX, g0], [W.BX, -W.BZ], [-W.BX, -W.BZ], [-W.BX, W.BZ], [W.BX, W.BZ], [W.BX, g1]]]) line(pts, 0.8, '#b08a64');
+  if (W.DISTRICT) { // 북쪽 주택 단지: 열린 구역 땅 · 대문 길 · 입구 광장 · 중앙로 · 큰길 · 집(주인 있든 없든 같은 색)
+    const D = W.DISTRICT, n = W.HOUSING.open, DIRT = '#ecd6b4', G = W.GATE_ROAD;
+    rect([D.x0, W.openZ0(n), D.x1, D.z1], '#d4eebd', '#b08a64'); rect([G.x - G.hw, G.z1, G.x + G.hw, G.z0], DIRT); disc(W.ENTRY.x, W.ENTRY.z, W.ENTRY.r, ROAD);
+    rect([SPINE.x - STREET_HW, W.openZ0(n), SPINE.x + STREET_HW, SPINE.z0], DIRT);
+    for (const a of W.STREETS.slice(0, n)) rect([D.x0, a.z - STREET_HW, D.x1, a.z + STREET_HW], DIRT);
+    for (const pl of W.PLOTS) if (W.isOpen(pl, n)) rect(pl.house, '#d9a98a', '#00000038');
+  }
   // 길·광장·성당/교회 앞마당 (분홍 돌바닥)
   for (const [pts, w] of paths || []) line(pts, w, ROAD);
   for (const r of Object.values(W.SACRED_YARDS)) rect(r, ROAD);
@@ -109,7 +119,7 @@ function bake(paths) {
     x.setLineDash([3 * s, 2 * s]); line([...W.TRAIN_PATH.pts, W.TRAIN_PATH.pts[0]], 1.4, '#9a7b62'); x.setLineDash([]);
     for (const t of W.GATE_TOWERS) disc(t.x, t.z, t.r, '#ffb8c8');
   }
-  return { c, b, s, L: labels() };
+  return { c, b, s, L: labels(), open: W.HOUSING.open };
 }
 const rr = (x, x0, y0, w, h, r) => { x.beginPath(); x.roundRect ? x.roundRect(x0, y0, w, h, r) : x.rect(x0, y0, w, h); };
 // 한 장 그리기: 밑그림 오려 붙이기 → (밤이면 살짝 어둡게) → 이름표 → 다른 사람 점 → 내 시야·화살표
@@ -191,7 +201,7 @@ export function createMinimap({ root, host, menu, players, getMe, getYaw, getNig
   function draw(now = performance.now()) {
     const me = getMe();
     if (!me || now - last < HZ || (!on && !isOpen())) return;
-    last = now; B ??= bake(paths);
+    last = now; if (B && B.open !== W.HOUSING.open) B = null; B ??= bake(paths);
     const opt = { players, me, yaw: getYaw(), night: getNight?.() ?? 0, dest: getDest?.() }, w = where(me.x, me.z), t = `${w.icon} ${w.name}${w.tip ? ' · ' + w.tip : ''}`;
     if (on) {
       const [x, sw] = fit(cv);

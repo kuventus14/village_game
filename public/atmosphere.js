@@ -1,7 +1,7 @@
 // 하늘·빛·안개·구름·먼 산과 먼 숲 + 한국 시간 낮·밤(해·달·별·노을). 시간 계산은 daycycle.js
 import * as THREE from 'three';
 import { soft, lumpy, paint, rng, groundH, Batch, instanced, U, GLOWS } from './gfx.js';
-import { trailNear, TEMPLE_YARD, inTown, campDist, parkDist, PARK, PARK_CENTER } from './world.js';
+import { trailNear, TEMPLE_YARD, inTown, campDist, parkDist, districtDist, PARK, PARK_CENTER } from './world.js';
 import { KST, kstHours, kstParts, sunTimes, sunVec, keyTimes, newState, skyState, moonPhase, makeClock } from './daycycle.js';
 
 const SRGB = THREE.SRGBColorSpace, DEG = Math.PI / 180;
@@ -141,7 +141,7 @@ export function createAtmosphere(scene, camera, Q, renderer, post) {
   const lists = [[], []], pal = ['#7fc77a', '#93d07a', '#6db88a', '#a7d77c', '#5fae86'];
   for (let i = 0; i < Q.farTrees; i++) {
     const a = R() * Math.PI * 2, d = 95 + Math.pow(R(), 0.7) * 130, x = Math.sin(a) * d, z = Math.cos(a) * d, s = 2.4 + R() * 2.2, k = R() < 0.65 ? 0 : 1;
-    if (inTown(x, z, -8) || trailNear(x, z).d < 26 || campDist(x, z) < 26 || parkDist(x, z) < 26 || Math.hypot(x - TEMPLE_YARD.cx, z - TEMPLE_YARD.cz) < TEMPLE_YARD.w * 0.8) continue; // 마을 안·숲길·사찰 둘레는 비움 (trail.js 의 숲이 채움)
+    if (inTown(x, z, -8) || trailNear(x, z).d < 26 || campDist(x, z) < 26 || parkDist(x, z) < 26 || districtDist(x, z) < 22 || Math.hypot(x - TEMPLE_YARD.cx, z - TEMPLE_YARD.cz) < TEMPLE_YARD.w * 0.8) continue; // 마을 안·숲길·사찰 둘레는 비움 (trail.js 의 숲이 채움)
     lists[k].push({ x, y: groundH(x, z) + s * 0.9, z, s, ry: R() * 6, c: pal[Math.floor(R() * pal.length)] });
   }
   const farMat = soft('#ffffff', { vertexColors: true });

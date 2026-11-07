@@ -3,13 +3,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { STATUS, POSES, AUTO, SEATS, SIT_STATUS, PORTALS, transitMs, placeOf, resolve, spawnPoint, standPos, cleanAvatar, randomAvatar, crossesGate } from './public/world.js';
+import { STATUS, POSES, AUTO, SEATS, SIT_STATUS, PORTALS, transitMs, placeOf, resolve, spawnPoint, standPos, cleanAvatar, randomAvatar, crossesGate, HOUSING, roomAt } from './public/world.js';
+import { ownedWith } from './public/closet.js';
 import { guestNick, isGuestNick } from './guest.js';
 import { createStore } from './store.js';
 import { createAuth } from './auth.js';
 import { createGames } from './games.js';
 import { createSlot } from './slots.js';
 import { createFishing } from './fishing.js';
+import { createShop } from './shop.js';
+import { createCloset } from './closet.js';
+import { createHouse } from './house.js';
+import { resetGrid } from './public/pathfind.js';
 import { createRituals } from './rituals.js';
 import { kstHours } from './public/daycycle.js';
 import { createCamp, atOffset, CLOSED_MSG } from './camp.js';
@@ -69,7 +74,7 @@ const ok = (ws) => ws?.readyState === 1 && ws.bufferedAmount < 2e6; // 밀린 �
 const send = (ws, o) => ok(ws) && ws.send(JSON.stringify(o));
 const bcast = (o, except) => { const s = JSON.stringify(o); for (const p of players.values()) if (p.ws !== except && ok(p.ws)) p.ws.send(s); };
 const clean = (s, n) => String(s ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, n);
-const pub = (p) => ({ id: p.id, name: p.nick, a: p.a, s: p.s, pl: p.pl, x: p.x, z: p.z, ry: p.ry, seat: p.seat, fl: p.fl, vl: p.vl ? 1 : 0, pose: p.pose || '' });
+const pub = (p) => ({ id: p.id, name: p.nick, a: p.a, s: p.s, pl: p.pl, x: p.x, z: p.z, ry: p.ry, seat: p.seat, fl: p.fl, vl: p.vl ? 1 : 0, pose: p.pose || '', rh: p.rh || 0 });
 const byUid = (uid) => [...players.values()].find((p) => p.uid === uid); // 같은 계정(로그인 아이디) 접속 찾기
 const byNick = (nick) => { const k = String(nick).toLowerCase(); return [...players.values()].find((p) => p.nick.toLowerCase() === k); };
 
@@ -104,10 +109,19 @@ export function setPlace(p, pl) {
   return true;
 }
 // 바닥 자세 풀기 (움직이거나 다른 걸 하면): 모두에게 알림
-const unpose = (p) => { p.pose = ''; bcast({ t: 'pose', id: p.id, p: '' }); };
+const unpose = (p) => { p.pose = ''; p.rh = 0; p.restKey = null; bcast({ t: 'pose', id: p.id, p: '' }); };
 const sendInfo = (p) => bcast({ t: 'info', id: p.id, s: p.s, pl: p.pl, seat: p.seat, x: p.x, z: p.z, ry: p.ry, fl: p.fl });
 // 연못 낚시 (규칙은 fishing.js). FISH_BITE=최소,최대(ms) 는 시험용으로 입질을 빨리 오게 함
-const fishing = createFishing({ now: Date.now, rand: Math.random, send: (p, o) => send(p.ws, o), bcast, info: sendInfo, save: (p) => p.uid && auth.saveFish(p.uid, p.dex).catch(console.error), opts: process.env.FISH_BITE ? { bite: process.env.FISH_BITE.split(',').map(Number) } : {} });
+const fishing = createFishing({ now: Date.now, rand: Math.random, send: (p, o) => send(p.ws, o), bcast, info: sendInfo, save: (p) => p.uid && auth.saveFish(p.uid, p.dex).catch(console.error), onCatch: (p, fish) => shop.add(p, fish.k), opts: process.env.FISH_BITE ? { bite: process.env.FISH_BITE.split(',').map(Number) } : {} });
+// 옷 가게 (규칙은 closet.js, 값·자리는 public/closet.js): 칩으로 옷·꾸미기를 사 계정에 저장, 입는 건 아바타 꾸미기(auth.js 가 안 산 옷은 거절)
+const closet = createCloset({ send: (p, o) => send(p.ws, o), wallet, save: (p) => p.uid && auth.saveCloset(p.uid, p.closet).catch(console.error) });
+// 주택 단지 집터 받기 (규칙은 house.js, 설계는 docs/HOUSING.md): 계정당 한 채·무료, 80% 차면 다음 큰길이 열림(봇 길 찾기 격자도 다시 만듦)
+export const house = createHouse({ store, send: (p, o) => send(p.ws, o), bcast, save: (p) => p.uid && auth.saveHouse(p.uid, p.house).catch(console.error), onOpen: () => resetGrid(),
+  each: (fn) => players.forEach(fn), wallet, busy: (p) => !!(p.seat >= 0 || p.game || p.transit || p.fish || p.ride || p.act || p.fw || p.pad || rides.frozen(p)),
+  pose(p, k, h) { p.pose = k; p.rh = h; p.poseAt = Date.now(); bcast({ t: 'pose', id: p.id, p: k, h }); },
+  warp(p, x, z, ry) { Object.assign(p, { x, z, ry, y: 0, dirty: true }); if (p.pose) unpose(p); send(p.ws, { t: 'tp', x, z, ry }); bcast({ t: 'warp', id: p.id, x, z, ry }); setPlace(p, placeOf(x, z)); sendInfo(p); } });
+// 물고기 가게 (규칙은 shop.js): 낚은 물고기는 가방에, 가게에서 팔면 칩(카지노와 같은 돈). 가방·오늘 판 수는 계정에 저장
+const shop = createShop({ now: Date.now, send: (p, o) => send(p.ws, o), wallet, save: (p) => p.uid && auth.saveShop(p.uid, { bag: p.bag, day: p.soldDay, sold: p.sold }).catch(console.error) });
 
 // 성당·사찰·교회 행동 (규칙은 rituals.js). RITUAL_AT=HH:MM 은 시험·시연용: 서버의 의식 시계를 그 한국 시각부터 흐르게 함
 const ritOff = process.env.RITUAL_AT ? (() => { const [h, mi] = process.env.RITUAL_AT.split(':').map(Number); return ((((h + mi / 60 - kstHours(Date.now())) % 24) + 24) % 24) * 3.6e6; })() : 0;
@@ -153,7 +167,7 @@ wss.on('connection', (ws) => {
     for (let i = 0; !nick && i < 60; i++) { const n = guestNick(Math.random, i < 40 ? 2 : 3); if (!(await used(n))) nick = n; }
     if (!nick || online(nick)) return send(ws, { t: 'auth' }); // 동시에 같은 이름이 나온 드문 경우만 (다시 누르면 됨)
     me = newMe(nick, null, a, 1000, {}, {});
-    addPlayer(me, { chips: 1000, refilled: false });
+    addPlayer(me, { chips: 1000, refilled: false, shop: shop.snapshot(me), closet: closet.snapshot(me), house: house.snapshot(me) });
     bots.onHuman(me);
   }
   async function join(msg) {
@@ -166,7 +180,9 @@ wss.on('connection', (ws) => {
     let chips = m.user.chips ?? 1000, refilled = false;
     if (chips < 300 && Date.now() - (m.user.refillAt || 0) > 6 * 3600e3) { chips = 1000; refilled = true; auth.saveChips(m.id, chips, Date.now()).catch(console.error); } // 파산 구제: 6시간에 한 번
     me = newMe(m.nick, m.id, m.user.avatar, chips, m.user.fish ?? {}, m.user.sacred ?? {});
-    addPlayer(me, { chips, refilled });
+    Object.assign(me, { bag: { ...(m.user.shop?.bag ?? {}) }, soldDay: m.user.shop?.day, sold: m.user.shop?.sold ?? 0, closet: ownedWith(m.user.closet, m.user.avatar), house: m.user.house ?? null });
+    house.assign(me); // 처음 접속(가입 직후)이면 집을 한 채 배정
+    addPlayer(me, { chips, refilled, shop: shop.snapshot(me), closet: closet.snapshot(me), house: house.snapshot(me) });
     bots.onHuman(me);
   }
 
@@ -207,6 +223,8 @@ export function onMsg(me, m) {
   if (m.t === 'm') {
     if (me.seat >= 0 || me.transit || games.frozen(me) || rides.frozen(me)) return; // 앉아 있거나 층 이동·게임 준비·놀이기구 타는 중엔 위치 고정
     if (![m.x, m.z, m.ry].every(Number.isFinite)) return;
+    if ((me.room || 0) !== roomAt(m.x, m.z)) return; // 집 안(방)과 밖은 서버가 옮겨 줄 때만 오감
+    if (me.pose && me.rh) return; // 가구에 앉거나 누운 채 가만히 있으면 그 자리 그대로 (움직이면 위에서 이미 자세가 풀려 있음)
     if (crossesGate(me.x, me.z, m.x, m.z)) { m.x = me.x; m.z = me.z; } // 닫힌 정문 게이트는 큰 걸음으로도 못 지남
     [me.x, me.z] = games.clamp(me, ...resolve(m.x, m.z, 0.4, me.fl));
     me.ry = m.ry; me.w = !!m.w; me.y = Math.max(0, Math.min(2, Number(m.y) || 0)); me.dirty = true; // y = 점프 높이
@@ -253,6 +271,9 @@ export function onMsg(me, m) {
   }
   else if (m.t === 'throw') games.throwBalloon(me, m);
   else if (m.t === 'fish') fishing.act(me, m);
+  else if (m.t === 'house') house.act(me, m); // 집터 받기·주인 목록 (house.js)
+  else if (m.t === 'closet') closet.act(me, m); // 옷 가게: 사기·옷장 보기 (closet.js)
+  else if (m.t === 'shop') shop.act(me, m); // 물고기 가게: 팔기·가방 보기 (shop.js)
   else if (m.t === 'act') rituals.act(me, m); // 고해 체험 글은 화면에만 있고 여기로 오지 않음 (오더라도 읽지 않음)
   else if (m.t === 'bead') rituals.bead(me);
   else if (m.t === 'note') rituals.note(me, m);
@@ -305,5 +326,5 @@ process.on('SIGTERM', () => { store.flush(); process.exit(0); });
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || 3300;
   const nBots = process.env.BOTS == null || process.env.BOTS === '' ? 80 : Math.max(0, Math.min(150, Number(process.env.BOTS) || 0)); // 본 실행만 기본 80명 (시험의 listen() 은 꺼짐)
-  listen(port).then(async () => { console.log(`포근마을 http://localhost:${port} (저장소: ${store.kind})`); if (nBots) { await bots.start(nBots); console.log(`봇 ${nBots}명 접속`); } });
+  listen(port).then(async () => { await house.load(); console.log(`포근마을 http://localhost:${port} (저장소: ${store.kind}, 집터 큰길 ${HOUSING.open}개 열림)`); if (nBots) { await bots.start(nBots); console.log(`봇 ${nBots}명 접속`); } });
 }
